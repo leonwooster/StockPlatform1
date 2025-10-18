@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technical Analysis - StockSense Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-navy: #1a2332;
+            --steel-blue: #2d3748;
+            --accent-teal: #319795;
+            --warning-amber: #d69e2e;
+            --positive-green: #38a169;
+            --negative-red: #e53e3e;
+            --neutral-gray: #718096;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, var(--primary-navy) 0%, var(--steel-blue) 100%);
+            min-height: 100vh;
+        }
+        
+        .mono-font { font-family: 'JetBrains Mono', monospace; }
+        .display-font { font-family: 'Poppins', sans-serif; }
+        
+        .liquid-bg {
+            background: linear-gradient(45deg, var(--primary-navy), var(--steel-blue), var(--primary-navy));
+            background-size: 400% 400%;
+            animation: liquidFlow 15s ease-in-out infinite;
+        }
+        
+        @keyframes liquidFlow {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .price-positive { color: var(--positive-green); }
+        .price-negative { color: var(--negative-red); }
+        
+        .nav-link {
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .nav-link:hover {
+            transform: translateY(-2px);
+        }
+        
+        .nav-link.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--accent-teal);
+            border-radius: 1px;
+        }
+        
+        .indicator-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .indicator-btn.active {
+            background: var(--accent-teal);
+            transform: scale(1.05);
+        }
+        
+        .indicator-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(49, 151, 149, 0.3);
+        }
+        
+        .timeframe-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .timeframe-btn.active {
+            background: var(--accent-teal);
+            box-shadow: 0 0 15px rgba(49, 151, 149, 0.4);
+        }
+        
+        .signal-meter {
+            background: conic-gradient(
+                var(--negative-red) 0deg,
+                var(--warning-amber) 120deg,
+                var(--positive-green) 240deg,
+                var(--positive-green) 360deg
+            );
+        }
+        
+        .chart-container {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .drawing-tool {
+            transition: all 0.3s ease;
+        }
+        
+        .drawing-tool:hover {
+            background: rgba(49, 151, 149, 0.2);
+            transform: scale(1.1);
+        }
+        
+        .drawing-tool.active {
+            background: var(--accent-teal);
+            color: white;
+        }
+    </style>
+</head>
+<body class="liquid-bg">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 glass-card">
+        <div class="max-w-7xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-8">
+                    <h1 class="display-font text-2xl font-bold text-white">StockSense Pro</h1>
+                    <div class="hidden md:flex space-x-6">
+                        <a href="index.html" class="nav-link text-gray-300 hover:text-white font-medium">Dashboard</a>
+                        <a href="technical.html" class="nav-link active text-white font-medium">Technical Analysis</a>
+                        <a href="screener.html" class="nav-link text-gray-300 hover:text-white font-medium">Screener</a>
+                        <a href="news.html" class="nav-link text-gray-300 hover:text-white font-medium">News & Sentiment</a>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <input type="text" id="stockSearch" placeholder="Search stocks..." 
+                               class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 w-64 text-white text-sm focus:border-teal-500 focus:outline-none">
+                    </div>
+                    <div class="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
+                        <span class="text-white font-semibold text-sm">JD</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="pt-20 px-6">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header -->
+            <section class="mb-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="display-font text-3xl font-bold text-white mb-2">Technical Analysis</h2>
+                        <p class="text-gray-300">Advanced charting and trading indicators</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="glass-card rounded-lg px-4 py-2">
+                            <span class="text-gray-400 text-sm">Selected:</span>
+                            <span class="text-white font-semibold ml-2" id="selectedSymbol">AAPL</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chart Controls -->
+            <section class="mb-6">
+                <div class="glass-card rounded-xl p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <!-- Timeframe Selection -->
+                        <div class="flex space-x-2">
+                            <button class="timeframe-btn px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('1m')">1m</button>
+                            <button class="timeframe-btn px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('5m')">5m</button>
+                            <button class="timeframe-btn px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('15m')">15m</button>
+                            <button class="timeframe-btn px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('1h')">1h</button>
+                            <button class="timeframe-btn active px-3 py-2 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('1D')">1D</button>
+                            <button class="timeframe-btn px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('1W')">1W</button>
+                            <button class="timeframe-btn px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="setTimeframe('1M')">1M</button>
+                        </div>
+
+                        <!-- Drawing Tools -->
+                        <div class="flex space-x-2">
+                            <button class="drawing-tool px-3 py-2 bg-gray-700 text-white rounded-lg text-sm" onclick="selectDrawingTool('trendline')" title="Trend Line">
+                                📈
+                            </button>
+                            <button class="drawing-tool px-3 py-2 bg-gray-700 text-white rounded-lg text-sm" onclick="selectDrawingTool('horizontal')" title="Horizontal Line">
+                                ➖
+                            </button>
+                            <button class="drawing-tool px-3 py-2 bg-gray-700 text-white rounded-lg text-sm" onclick="selectDrawingTool('fibonacci')" title="Fibonacci Retracement">
+                                📊
+                            </button>
+                            <button class="drawing-tool px-3 py-2 bg-gray-700 text-white rounded-lg text-sm" onclick="clearDrawings()" title="Clear All">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Main Chart Area -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <!-- Technical Indicators Panel -->
+                <div class="lg:col-span-1">
+                    <div class="glass-card rounded-xl p-6 mb-6">
+                        <h3 class="display-font text-lg font-bold text-white mb-4">Technical Indicators</h3>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300 text-sm">SMA (20)</span>
+                                <button class="indicator-btn px-3 py-1 bg-gray-700 text-white rounded text-sm" onclick="toggleIndicator('sma')" id="sma-btn">OFF</button>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300 text-sm">EMA (12)</span>
+                                <button class="indicator-btn px-3 py-1 bg-gray-700 text-white rounded text-sm" onclick="toggleIndicator('ema')" id="ema-btn">OFF</button>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300 text-sm">RSI (14)</span>
+                                <button class="indicator-btn px-3 py-1 bg-gray-700 text-white rounded text-sm" onclick="toggleIndicator('rsi')" id="rsi-btn">OFF</button>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300 text-sm">MACD</span>
+                                <button class="indicator-btn px-3 py-1 bg-gray-700 text-white rounded text-sm" onclick="toggleIndicator('macd')" id="macd-btn">OFF</button>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300 text-sm">Bollinger Bands</span>
+                                <button class="indicator-btn px-3 py-1 bg-gray-700 text-white rounded text-sm" onclick="toggleIndicator('bollinger')" id="bollinger-btn">OFF</button>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300 text-sm">Volume</span>
+                                <button class="indicator-btn active px-3 py-1 text-white rounded text-sm" onclick="toggleIndicator('volume')" id="volume-btn">ON</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Signal Strength Meter -->
+                    <div class="glass-card rounded-xl p-6 mb-6">
+                        <h3 class="display-font text-lg font-bold text-white mb-4">Signal Strength</h3>
+                        <div class="relative w-32 h-32 mx-auto mb-4">
+                            <div class="signal-meter w-full h-full rounded-full p-2">
+                                <div class="bg-gray-800 w-full h-full rounded-full flex items-center justify-center">
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-white" id="signalStrength">78%</div>
+                                        <div class="text-xs text-gray-400">BUY</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="absolute top-2 left-1/2 transform -translate-x-1/2 w-1 h-4 bg-white rounded-full origin-bottom" 
+                                 id="signalPointer" style="transform: translateX(-50%) rotate(45deg);"></div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-sm text-gray-400 mb-2">Risk Level: <span class="text-yellow-400">Medium</span></div>
+                            <div class="text-xs text-gray-500">Confidence: High</div>
+                        </div>
+                    </div>
+
+                    <!-- Price Targets -->
+                    <div class="glass-card rounded-xl p-6">
+                        <h3 class="display-font text-lg font-bold text-white mb-4">Price Targets</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-400 text-sm">Resistance 2</span>
+                                <span class="mono-font text-red-400">$185.50</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-400 text-sm">Resistance 1</span>
+                                <span class="mono-font text-yellow-400">$180.25</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-400 text-sm">Current</span>
+                                <span class="mono-font text-white">$175.43</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-400 text-sm">Support 1</span>
+                                <span class="mono-font text-yellow-400">$170.80</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-400 text-sm">Support 2</span>
+                                <span class="mono-font text-green-400">$165.20</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Chart -->
+                <div class="lg:col-span-3">
+                    <div class="glass-card rounded-xl p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h3 class="display-font text-xl font-bold text-white" id="chartTitle">AAPL - Apple Inc.</h3>
+                                <div class="flex items-center space-x-4 mt-2">
+                                    <span class="mono-font text-3xl font-bold text-white" id="currentPrice">$175.43</span>
+                                    <span class="text-lg price-positive" id="priceChange">+2.15 (+1.24%)</span>
+                                    <span class="text-sm text-gray-400" id="volume">Vol: 45.2M</span>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm text-gray-400">Last Updated</div>
+                                <div class="text-white" id="lastUpdated">--:--:--</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Main Chart -->
+                        <div class="chart-container mb-6">
+                            <div id="technicalChart" style="height: 500px;"></div>
+                        </div>
+
+                        <!-- RSI Chart -->
+                        <div class="chart-container mb-6" id="rsiContainer" style="display: none;">
+                            <div id="rsiChart" style="height: 150px;"></div>
+                        </div>
+
+                        <!-- MACD Chart -->
+                        <div class="chart-container" id="macdContainer" style="display: none;">
+                            <div id="macdChart" style="height: 150px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Summary -->
+            <section class="mt-8">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Technical Summary -->
+                    <div class="glass-card rounded-xl p-6">
+                        <h3 class="display-font text-xl font-bold text-white mb-4">Technical Summary</h3>
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300">Overall Signal</span>
+                                <span class="px-3 py-1 bg-green-600 text-white rounded-full text-sm font-medium">BULLISH</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300">Moving Averages</span>
+                                <span class="text-green-400">Buy</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300">Oscillators</span>
+                                <span class="text-yellow-400">Neutral</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-300">Trend Strength</span>
+                                <span class="text-green-400">Strong</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Analysis -->
+                    <div class="glass-card rounded-xl p-6">
+                        <h3 class="display-font text-xl font-bold text-white mb-4">AI Analysis</h3>
+                        <div class="space-y-4">
+                            <div class="bg-gray-800/50 rounded-lg p-4">
+                                <div class="text-sm text-gray-300 mb-2">Pattern Recognition</div>
+                                <div class="text-green-400 font-medium">Ascending Triangle Pattern Detected</div>
+                            </div>
+                            <div class="bg-gray-800/50 rounded-lg p-4">
+                                <div class="text-sm text-gray-300 mb-2">Momentum Analysis</div>
+                                <div class="text-yellow-400 font-medium">Building Bullish Momentum</div>
+                            </div>
+                            <div class="bg-gray-800/50 rounded-lg p-4">
+                                <div class="text-sm text-gray-300 mb-2">Volume Analysis</div>
+                                <div class="text-green-400 font-medium">Above Average Volume Confirms Trend</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="main.js"></script>
+    <script>
+        // Technical Analysis specific variables
+        let technicalChart = null;
+        let rsiChart = null;
+        let macdChart = null;
+        let activeIndicators = new Set(['volume']);
+        let currentDrawingTool = null;
+        let currentTimeframe = '1D';
+
+        // Initialize technical analysis page
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeTechnicalAnalysis();
+            updateLastUpdated();
+            setInterval(updateLastUpdated, 1000);
+        });
+
+        function initializeTechnicalAnalysis() {
+            initializeTechnicalChart();
+            initializeRSIChart();
+            initializeMACDChart();
+            animatePageLoad();
+        }
+
+        function initializeTechnicalChart() {
+            const chartElement = document.getElementById('technicalChart');
+            if (!chartElement) return;
+
+            technicalChart = echarts.init(chartElement);
+            updateTechnicalChart();
+        }
+
+        function updateTechnicalChart() {
+            if (!technicalChart) return;
+
+            const candlestickData = generateCandlestickData(60);
+            const volumeData = generateVolumeData(60);
+            
+            const series = [{
+                name: 'Candlestick',
+                type: 'candlestick',
+                data: candlestickData.values,
+                itemStyle: {
+                    color: '#38a169',
+                    color0: '#e53e3e',
+                    borderColor: '#38a169',
+                    borderColor0: '#e53e3e'
+                }
+            }];
+
+            // Add indicators if active
+            if (activeIndicators.has('sma')) {
+                const smaData = calculateSMA(candlestickData.values, 20);
+                series.push({
+                    name: 'SMA 20',
+                    type: 'line',
+                    data: smaData,
+                    smooth: true,
+                    lineStyle: { color: '#d69e2e', width: 2 },
+                    symbol: 'none'
+                });
+            }
+
+            if (activeIndicators.has('ema')) {
+                const emaData = calculateEMA(candlestickData.values, 12);
+                series.push({
+                    name: 'EMA 12',
+                    type: 'line',
+                    data: emaData,
+                    smooth: true,
+                    lineStyle: { color: '#9f7aea', width: 2 },
+                    symbol: 'none'
+                });
+            }
+
+            if (activeIndicators.has('bollinger')) {
+                const bollingerData = calculateBollingerBands(candlestickData.values, 20);
+                series.push({
+                    name: 'BB Upper',
+                    type: 'line',
+                    data: bollingerData.upper,
+                    smooth: true,
+                    lineStyle: { color: '#f56565', width: 1 },
+                    symbol: 'none',
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(245, 101, 101, 0.1)' },
+                            { offset: 1, color: 'rgba(245, 101, 101, 0.05)' }
+                        ])
+                    }
+                });
+                series.push({
+                    name: 'BB Lower',
+                    type: 'line',
+                    data: bollingerData.lower,
+                    smooth: true,
+                    lineStyle: { color: '#f56565', width: 1 },
+                    symbol: 'none'
+                });
+            }
+
+            if (activeIndicators.has('volume')) {
+                series.push({
+                    name: 'Volume',
+                    type: 'bar',
+                    yAxisIndex: 1,
+                    data: volumeData,
+                    itemStyle: {
+                        color: function(params) {
+                            return params.dataIndex % 2 === 0 ? '#38a169' : '#e53e3e';
+                        }
+                    }
+                });
+            }
+
+            const option = {
+                backgroundColor: 'transparent',
+                grid: [
+                    {
+                        left: '3%',
+                        right: '4%',
+                        height: '65%',
+                        containLabel: true
+                    },
+                    {
+                        left: '3%',
+                        right: '4%',
+                        top: '75%',
+                        height: '15%',
+                        containLabel: true
+                    }
+                ],
+                xAxis: [
+                    {
+                        type: 'category',
+                        data: candlestickData.dates,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { lineStyle: { color: '#4a5568' } },
+                        axisLabel: { color: '#a0aec0' }
+                    },
+                    {
+                        type: 'category',
+                        gridIndex: 1,
+                        data: candlestickData.dates,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { lineStyle: { color: '#4a5568' } },
+                        axisLabel: { show: false }
+                    }
+                ],
+                yAxis: [
+                    {
+                        scale: true,
+                        splitArea: { show: true },
+                        axisLine: { lineStyle: { color: '#4a5568' } },
+                        axisLabel: { color: '#a0aec0' },
+                        splitLine: { lineStyle: { color: '#2d3748' } }
+                    },
+                    {
+                        gridIndex: 1,
+                        splitNumber: 3,
+                        axisLine: { lineStyle: { color: '#4a5568' } },
+                        axisLabel: { color: '#a0aec0' },
+                        splitLine: { lineStyle: { color: '#2d3748' } }
+                    }
+                ],
+                series: series,
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross' },
+                    backgroundColor: 'rgba(45, 55, 72, 0.9)',
+                    borderColor: '#4a5568',
+                    textStyle: { color: '#e2e8f0' }
+                }
+            };
+
+            technicalChart.setOption(option);
+        }
+
+        function initializeRSIChart() {
+            const chartElement = document.getElementById('rsiChart');
+            if (!chartElement) return;
+
+            rsiChart = echarts.init(chartElement);
+            updateRSIChart();
+        }
+
+        function updateRSIChart() {
+            if (!rsiChart || !activeIndicators.has('rsi')) return;
+
+            const rsiData = generateRSIData(60);
+            
+            const option = {
+                backgroundColor: 'transparent',
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: rsiData.dates,
+                    axisLine: { lineStyle: { color: '#4a5568' } },
+                    axisLabel: { color: '#a0aec0' }
+                },
+                yAxis: {
+                    type: 'value',
+                    min: 0,
+                    max: 100,
+                    axisLine: { lineStyle: { color: '#4a5568' } },
+                    axisLabel: { color: '#a0aec0' },
+                    splitLine: { lineStyle: { color: '#2d3748' } }
+                },
+                series: [{
+                    name: 'RSI',
+                    type: 'line',
+                    data: rsiData.values,
+                    smooth: true,
+                    lineStyle: { color: '#d69e2e', width: 2 },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(214, 158, 46, 0.3)' },
+                            { offset: 1, color: 'rgba(214, 158, 46, 0.05)' }
+                        ])
+                    }
+                }],
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(45, 55, 72, 0.9)',
+                    borderColor: '#4a5568',
+                    textStyle: { color: '#e2e8f0' }
+                }
+            };
+
+            rsiChart.setOption(option);
+        }
+
+        function initializeMACDChart() {
+            const chartElement = document.getElementById('macdChart');
+            if (!chartElement) return;
+
+            macdChart = echarts.init(chartElement);
+            updateMACDChart();
+        }
+
+        function updateMACDChart() {
+            if (!macdChart || !activeIndicators.has('macd')) return;
+
+            const macdData = generateMACDData(60);
+            
+            const option = {
+                backgroundColor: 'transparent',
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: macdData.dates,
+                    axisLine: { lineStyle: { color: '#4a5568' } },
+                    axisLabel: { color: '#a0aec0' }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLine: { lineStyle: { color: '#4a5568' } },
+                    axisLabel: { color: '#a0aec0' },
+                    splitLine: { lineStyle: { color: '#2d3748' } }
+                },
+                series: [
+                    {
+                        name: 'MACD',
+                        type: 'line',
+                        data: macdData.macd,
+                        smooth: true,
+                        lineStyle: { color: '#9f7aea', width: 2 },
+                        symbol: 'none'
+                    },
+                    {
+                        name: 'Signal',
+                        type: 'line',
+                        data: macdData.signal,
+                        smooth: true,
+                        lineStyle: { color: '#f56565', width: 2 },
+                        symbol: 'none'
+                    },
+                    {
+                        name: 'Histogram',
+                        type: 'bar',
+                        data: macdData.histogram,
+                        itemStyle: {
+                            color: function(params) {
+                                return params.data >= 0 ? '#38a169' : '#e53e3e';
+                            }
+                        }
+                    }
+                ],
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(45, 55, 72, 0.9)',
+                    borderColor: '#4a5568',
+                    textStyle: { color: '#e2e8f0' }
+                }
+            };
+
+            macdChart.setOption(option);
+        }
+
+        // Indicator functions
+        function toggleIndicator(indicator) {
+            const button = document.getElementById(`${indicator}-btn`);
+            if (activeIndicators.has(indicator)) {
+                activeIndicators.delete(indicator);
+                button.classList.remove('active');
+                button.textContent = 'OFF';
+                button.style.background = '#374151';
+            } else {
+                activeIndicators.add(indicator);
+                button.classList.add('active');
+                button.textContent = 'ON';
+                button.style.background = '#319795';
+            }
+
+            // Show/hide indicator containers
+            if (indicator === 'rsi') {
+                document.getElementById('rsiContainer').style.display = activeIndicators.has('rsi') ? 'block' : 'none';
+            } else if (indicator === 'macd') {
+                document.getElementById('macdContainer').style.display = activeIndicators.has('macd') ? 'block' : 'none';
+            }
+
+            updateTechnicalChart();
+            updateRSIChart();
+            updateMACDChart();
+        }
+
+        function setTimeframe(timeframe) {
+            currentTimeframe = timeframe;
+            
+            // Update button states
+            document.querySelectorAll('.timeframe-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = '#374151';
+            });
+            
+            event.target.classList.add('active');
+            event.target.style.background = '#319795';
+            
+            updateTechnicalChart();
+        }
+
+        function selectDrawingTool(tool) {
+            currentDrawingTool = tool;
+            
+            // Update button states
+            document.querySelectorAll('.drawing-tool').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            event.target.classList.add('active');
+            
+            showNotification(`${tool} tool selected`, 'info');
+        }
+
+        function clearDrawings() {
+            showNotification('All drawings cleared', 'success');
+        }
+
+        function updateLastUpdated() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('lastUpdated').textContent = timeString;
+        }
+
+        // Data generation functions
+        function generateCandlestickData(days) {
+            const dates = [];
+            const values = [];
+            const basePrice = 175;
+            
+            for (let i = 0; i < days; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - (days - i));
+                dates.push(date.toLocaleDateString());
+                
+                const open = basePrice + (Math.random() - 0.5) * 10;
+                const close = open + (Math.random() - 0.5) * 5;
+                const high = Math.max(open, close) + Math.random() * 3;
+                const low = Math.min(open, close) - Math.random() * 3;
+                
+                values.push([open.toFixed(2), close.toFixed(2), low.toFixed(2), high.toFixed(2)]);
+            }
+            
+            return { dates, values };
+        }
+
+        function generateVolumeData(days) {
+            return Array.from({ length: days }, () => Math.floor(Math.random() * 100000000));
+        }
+
+        function generateRSIData(days) {
+            const dates = [];
+            const values = [];
+            
+            for (let i = 0; i < days; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - (days - i));
+                dates.push(date.toLocaleDateString());
+                values.push(Math.random() * 100);
+            }
+            
+            return { dates, values };
+        }
+
+        function generateMACDData(days) {
+            const dates = [];
+            const macd = [];
+            const signal = [];
+            const histogram = [];
+            
+            for (let i = 0; i < days; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - (days - i));
+                dates.push(date.toLocaleDateString());
+                
+                const macdValue = (Math.random() - 0.5) * 4;
+                const signalValue = macdValue + (Math.random() - 0.5) * 0.5;
+                const histValue = macdValue - signalValue;
+                
+                macd.push(macdValue.toFixed(2));
+                signal.push(signalValue.toFixed(2));
+                histogram.push(histValue.toFixed(2));
+            }
+            
+            return { dates, macd, signal, histogram };
+        }
+
+        function calculateSMA(data, period) {
+            const sma = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    sma.push(null);
+                } else {
+                    let sum = 0;
+                    for (let j = 0; j < period; j++) {
+                        sum += parseFloat(data[i - j][1]);
+                    }
+                    sma.push((sum / period).toFixed(2));
+                }
+            }
+            return sma;
+        }
+
+        function calculateEMA(data, period) {
+            const ema = [];
+            const multiplier = 2 / (period + 1);
+            
+            for (let i = 0; i < data.length; i++) {
+                if (i === 0) {
+                    ema.push(parseFloat(data[i][1]).toFixed(2));
+                } else {
+                    const current = parseFloat(data[i][1]);
+                    const previous = parseFloat(ema[i - 1]);
+                    const newEma = (current * multiplier) + (previous * (1 - multiplier));
+                    ema.push(newEma.toFixed(2));
+                }
+            }
+            return ema;
+        }
+
+        function calculateBollingerBands(data, period) {
+            const upper = [];
+            const lower = [];
+            
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    upper.push(null);
+                    lower.push(null);
+                } else {
+                    let sum = 0;
+                    for (let j = 0; j < period; j++) {
+                        sum += parseFloat(data[i - j][1]);
+                    }
+                    const sma = sum / period;
+                    
+                    let variance = 0;
+                    for (let j = 0; j < period; j++) {
+                        variance += Math.pow(parseFloat(data[i - j][1]) - sma, 2);
+                    }
+                    const stdDev = Math.sqrt(variance / period);
+                    
+                    upper.push((sma + (stdDev * 2)).toFixed(2));
+                    lower.push((sma - (stdDev * 2)).toFixed(2));
+                }
+            }
+            
+            return { upper, lower };
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-20 right-6 px-6 py-3 rounded-lg text-white z-50 ${
+                type === 'success' ? 'bg-green-600' :
+                type === 'warning' ? 'bg-yellow-600' :
+                type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+            }`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            anime({
+                targets: notification,
+                translateX: [300, 0],
+                opacity: [0, 1],
+                duration: 300,
+                easing: 'easeOutQuad'
+            });
+            
+            setTimeout(() => {
+                anime({
+                    targets: notification,
+                    translateX: [0, 300],
+                    opacity: [1, 0],
+                    duration: 300,
+                    easing: 'easeInQuad',
+                    complete: () => notification.remove()
+                });
+            }, 3000);
+        }
+
+        function animatePageLoad() {
+            anime.timeline()
+                .add({
+                    targets: '.glass-card',
+                    scale: [0.95, 1],
+                    opacity: [0, 1],
+                    delay: anime.stagger(100),
+                    duration: 600,
+                    easing: 'easeOutQuad'
+                });
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (technicalChart) technicalChart.resize();
+            if (rsiChart) rsiChart.resize();
+            if (macdChart) macdChart.resize();
+        });
+    </script>
+</body>
+</html>

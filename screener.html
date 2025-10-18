@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Screener - StockSense Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-navy: #1a2332;
+            --steel-blue: #2d3748;
+            --accent-teal: #319795;
+            --warning-amber: #d69e2e;
+            --positive-green: #38a169;
+            --negative-red: #e53e3e;
+            --neutral-gray: #718096;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, var(--primary-navy) 0%, var(--steel-blue) 100%);
+            min-height: 100vh;
+        }
+        
+        .mono-font { font-family: 'JetBrains Mono', monospace; }
+        .display-font { font-family: 'Poppins', sans-serif; }
+        
+        .liquid-bg {
+            background: linear-gradient(45deg, var(--primary-navy), var(--steel-blue), var(--primary-navy));
+            background-size: 400% 400%;
+            animation: liquidFlow 15s ease-in-out infinite;
+        }
+        
+        @keyframes liquidFlow {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .price-positive { color: var(--positive-green); }
+        .price-negative { color: var(--negative-red); }
+        
+        .nav-link {
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .nav-link:hover {
+            transform: translateY(-2px);
+        }
+        
+        .nav-link.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--accent-teal);
+            border-radius: 1px;
+        }
+        
+        .filter-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: #4a5568;
+            outline: none;
+        }
+        
+        .filter-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-teal);
+            cursor: pointer;
+        }
+        
+        .filter-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-teal);
+            cursor: pointer;
+            border: none;
+        }
+        
+        .preset-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .preset-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(49, 151, 149, 0.3);
+        }
+        
+        .preset-btn.active {
+            background: var(--accent-teal);
+            transform: scale(1.05);
+        }
+        
+        .result-row {
+            transition: all 0.3s ease;
+        }
+        
+        .result-row:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(4px);
+        }
+        
+        .calculator-input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        
+        .calculator-input:focus {
+            outline: none;
+            border-color: var(--accent-teal);
+            box-shadow: 0 0 0 2px rgba(49, 151, 149, 0.2);
+        }
+        
+        .valuation-gauge {
+            background: conic-gradient(
+                var(--negative-red) 0deg 120deg,
+                var(--warning-amber) 120deg 240deg,
+                var(--positive-green) 240deg 360deg
+            );
+        }
+    </style>
+</head>
+<body class="liquid-bg">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 glass-card">
+        <div class="max-w-7xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-8">
+                    <h1 class="display-font text-2xl font-bold text-white">StockSense Pro</h1>
+                    <div class="hidden md:flex space-x-6">
+                        <a href="index.html" class="nav-link text-gray-300 hover:text-white font-medium">Dashboard</a>
+                        <a href="technical.html" class="nav-link text-gray-300 hover:text-white font-medium">Technical Analysis</a>
+                        <a href="screener.html" class="nav-link active text-white font-medium">Screener</a>
+                        <a href="news.html" class="nav-link text-gray-300 hover:text-white font-medium">News & Sentiment</a>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <input type="text" id="stockSearch" placeholder="Search stocks..." 
+                               class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 w-64 text-white text-sm focus:border-teal-500 focus:outline-none">
+                    </div>
+                    <div class="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
+                        <span class="text-white font-semibold text-sm">JD</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="pt-20 px-6">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header -->
+            <section class="mb-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="display-font text-3xl font-bold text-white mb-2">Stock Screener & Calculator</h2>
+                        <p class="text-gray-300">Advanced filtering and valuation tools</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button class="px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors" onclick="runScreening()">
+                            Run Screener
+                        </button>
+                        <button class="px-4 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600 transition-colors" onclick="resetFilters()">
+                            Reset Filters
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Preset Screeners -->
+            <section class="mb-8">
+                <h3 class="display-font text-xl font-bold text-white mb-4">Preset Screeners</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <button class="preset-btn px-4 py-3 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="loadPreset('growth')">
+                        🚀 Growth Stocks
+                    </button>
+                    <button class="preset-btn px-4 py-3 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="loadPreset('value')">
+                        💎 Value Plays
+                    </button>
+                    <button class="preset-btn px-4 py-3 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="loadPreset('dividend')">
+                        💰 Dividend Aristocrats
+                    </button>
+                    <button class="preset-btn px-4 py-3 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="loadPreset('momentum')">
+                        📈 Momentum Leaders
+                    </button>
+                    <button class="preset-btn px-4 py-3 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="loadPreset('undervalued')">
+                        🔍 Undervalued
+                    </button>
+                    <button class="preset-btn px-4 py-3 bg-gray-700 text-white rounded-lg text-sm font-medium" onclick="loadPreset('smallcap')">
+                        🎯 Small Cap Gems
+                    </button>
+                </div>
+            </section>
+
+            <!-- Main Content Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Filters Panel -->
+                <div class="lg:col-span-1">
+                    <div class="glass-card rounded-xl p-6 mb-6">
+                        <h3 class="display-font text-lg font-bold text-white mb-6">Filters</h3>
+                        
+                        <!-- Market Cap Filter -->
+                        <div class="mb-6">
+                            <label class="block text-gray-300 text-sm font-medium mb-3">Market Cap</label>
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                        <span>Min: $0B</span>
+                                        <span id="marketCapValue">$500B</span>
+                                    </div>
+                                    <input type="range" class="filter-slider w-full" min="0" max="2000" value="500" 
+                                           oninput="updateFilterValue('marketCap', this.value)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- P/E Ratio Filter -->
+                        <div class="mb-6">
+                            <label class="block text-gray-300 text-sm font-medium mb-3">P/E Ratio</label>
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                        <span>Min: 0</span>
+                                        <span id="peValue">25</span>
+                                    </div>
+                                    <input type="range" class="filter-slider w-full" min="0" max="100" value="25" 
+                                           oninput="updateFilterValue('pe', this.value)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dividend Yield Filter -->
+                        <div class="mb-6">
+                            <label class="block text-gray-300 text-sm font-medium mb-3">Dividend Yield (%)</label>
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                        <span>Min: 0%</span>
+                                        <span id="dividendValue">2.5%</span>
+                                    </div>
+                                    <input type="range" class="filter-slider w-full" min="0" max="10" step="0.1" value="2.5" 
+                                           oninput="updateFilterValue('dividend', this.value)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Volume Filter -->
+                        <div class="mb-6">
+                            <label class="block text-gray-300 text-sm font-medium mb-3">Average Volume</label>
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                        <span>Min: 0M</span>
+                                        <span id="volumeValue">10M</span>
+                                    </div>
+                                    <input type="range" class="filter-slider w-full" min="0" max="100" value="10" 
+                                           oninput="updateFilterValue('volume', this.value)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sector Filter -->
+                        <div class="mb-6">
+                            <label class="block text-gray-300 text-sm font-medium mb-3">Sector</label>
+                            <select class="calculator-input w-full px-3 py-2 rounded-lg text-sm" id="sectorFilter">
+                                <option value="">All Sectors</option>
+                                <option value="technology">Technology</option>
+                                <option value="healthcare">Healthcare</option>
+                                <option value="finance">Finance</option>
+                                <option value="consumer">Consumer Discretionary</option>
+                                <option value="industrial">Industrial</option>
+                                <option value="energy">Energy</option>
+                                <option value="utilities">Utilities</option>
+                            </select>
+                        </div>
+
+                        <!-- Price Range Filter -->
+                        <div class="mb-6">
+                            <label class="block text-gray-300 text-sm font-medium mb-3">Price Range</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <input type="number" class="calculator-input px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="Min Price" id="minPrice" value="10">
+                                <input type="number" class="calculator-input px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="Max Price" id="maxPrice" value="1000">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Intrinsic Value Calculator -->
+                    <div class="glass-card rounded-xl p-6">
+                        <h3 class="display-font text-lg font-bold text-white mb-6">Intrinsic Value Calculator</h3>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-gray-300 text-sm font-medium mb-2">Stock Symbol</label>
+                                <input type="text" class="calculator-input w-full px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="e.g., AAPL" id="calcSymbol" value="AAPL">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 text-sm font-medium mb-2">Current EPS</label>
+                                <input type="number" class="calculator-input w-full px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="6.16" id="currentEPS" value="6.16" step="0.01">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 text-sm font-medium mb-2">Growth Rate (%)</label>
+                                <input type="number" class="calculator-input w-full px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="15" id="growthRate" value="15" step="0.1">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 text-sm font-medium mb-2">Discount Rate (%)</label>
+                                <input type="number" class="calculator-input w-full px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="10" id="discountRate" value="10" step="0.1">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 text-sm font-medium mb-2">Terminal Growth (%)</label>
+                                <input type="number" class="calculator-input w-full px-3 py-2 rounded-lg text-sm" 
+                                       placeholder="3" id="terminalGrowth" value="3" step="0.1">
+                            </div>
+                            
+                            <button class="w-full px-4 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors" 
+                                    onclick="calculateIntrinsicValue()">
+                                Calculate Intrinsic Value
+                            </button>
+                            
+                            <div class="mt-4 p-4 bg-gray-800/50 rounded-lg">
+                                <div class="text-center">
+                                    <div class="text-sm text-gray-400 mb-2">Estimated Intrinsic Value</div>
+                                    <div class="mono-font text-2xl font-bold text-white" id="intrinsicValue">$--.--</div>
+                                    <div class="text-sm text-gray-400 mt-2">Current Price: <span class="text-yellow-400" id="currentPriceCalc">$175.43</span></div>
+                                    <div class="text-sm mt-2" id="valuationStatus">--</div>
+                                </div>
+                            </div>
+                            
+                            <div class="relative w-24 h-24 mx-auto">
+                                <div class="valuation-gauge w-full h-full rounded-full p-1">
+                                    <div class="bg-gray-800 w-full h-full rounded-full flex items-center justify-center">
+                                        <div class="text-center">
+                                            <div class="text-xs text-gray-400">Margin</div>
+                                            <div class="text-sm font-bold text-white" id="marginOfSafety">--%</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Table -->
+                <div class="lg:col-span-2">
+                    <div class="glass-card rounded-xl p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="display-font text-xl font-bold text-white">Screening Results</h3>
+                            <div class="flex items-center space-x-4">
+                                <span class="text-gray-400 text-sm">Found <span id="resultCount">0</span> stocks</span>
+                                <button class="px-3 py-1 bg-gray-700 text-white rounded text-sm hover:bg-gray-600" onclick="exportResults()">
+                                    Export CSV
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-gray-700">
+                                        <th class="text-left py-3 px-2 text-gray-400 font-medium text-sm">Symbol</th>
+                                        <th class="text-left py-3 px-2 text-gray-400 font-medium text-sm">Company</th>
+                                        <th class="text-right py-3 px-2 text-gray-400 font-medium text-sm">Price</th>
+                                        <th class="text-right py-3 px-2 text-gray-400 font-medium text-sm">P/E</th>
+                                        <th class="text-right py-3 px-2 text-gray-400 font-medium text-sm">Market Cap</th>
+                                        <th class="text-right py-3 px-2 text-gray-400 font-medium text-sm">Div Yield</th>
+                                        <th class="text-center py-3 px-2 text-gray-400 font-medium text-sm">Signal</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="screeningResults">
+                                    <!-- Results will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="mt-6 flex justify-center">
+                            <button class="px-6 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors" onclick="loadMoreResults()">
+                                Load More Results
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="main.js"></script>
+    <script>
+        // Screener specific variables
+        let screeningResults = [];
+        let currentPage = 1;
+        const resultsPerPage = 20;
+
+        // Sample screening data
+        const sampleStocks = [
+            { symbol: 'AAPL', name: 'Apple Inc.', price: 175.43, pe: 28.5, marketCap: 2800, dividend: 0.5, sector: 'technology', signal: 'BUY' },
+            { symbol: 'MSFT', name: 'Microsoft Corp.', price: 378.85, pe: 32.1, marketCap: 2900, dividend: 0.7, sector: 'technology', signal: 'BUY' },
+            { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 142.56, pe: 25.8, marketCap: 1800, dividend: 0.0, sector: 'technology', signal: 'HOLD' },
+            { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.50, pe: 45.2, marketCap: 800, dividend: 0.0, sector: 'consumer', signal: 'SELL' },
+            { symbol: 'NVDA', name: 'NVIDIA Corp.', price: 495.23, pe: 65.3, marketCap: 1200, dividend: 0.1, sector: 'technology', signal: 'BUY' },
+            { symbol: 'AMZN', name: 'Amazon.com Inc.', price: 145.78, pe: 42.1, marketCap: 1500, dividend: 0.0, sector: 'consumer', signal: 'HOLD' },
+            { symbol: 'META', name: 'Meta Platforms', price: 325.67, pe: 28.9, marketCap: 800, dividend: 0.0, sector: 'technology', signal: 'BUY' },
+            { symbol: 'NFLX', name: 'Netflix Inc.', price: 412.34, pe: 35.6, marketCap: 180, dividend: 0.0, sector: 'consumer', signal: 'HOLD' },
+            { symbol: 'JPM', name: 'JPMorgan Chase', price: 168.45, pe: 12.3, marketCap: 500, dividend: 2.8, sector: 'finance', signal: 'BUY' },
+            { symbol: 'JNJ', name: 'Johnson & Johnson', price: 162.78, pe: 15.6, marketCap: 430, dividend: 2.9, sector: 'healthcare', signal: 'BUY' },
+            { symbol: 'V', name: 'Visa Inc.', price: 245.67, pe: 33.2, marketCap: 520, dividend: 0.8, sector: 'finance', signal: 'HOLD' },
+            { symbol: 'PG', name: 'Procter & Gamble', price: 155.23, pe: 24.1, marketCap: 370, dividend: 2.4, sector: 'consumer', signal: 'BUY' },
+            { symbol: 'UNH', name: 'UnitedHealth Group', price: 542.89, pe: 22.8, marketCap: 510, dividend: 1.4, sector: 'healthcare', signal: 'BUY' },
+            { symbol: 'HD', name: 'Home Depot Inc.', price: 335.67, pe: 21.5, marketCap: 350, dividend: 2.6, sector: 'consumer', signal: 'HOLD' },
+            { symbol: 'MA', name: 'Mastercard Inc.', price: 398.45, pe: 35.7, marketCap: 380, dividend: 0.6, sector: 'finance', signal: 'HOLD' },
+            { symbol: 'DIS', name: 'Walt Disney Co.', price: 89.34, pe: 18.9, marketCap: 160, dividend: 0.0, sector: 'consumer', signal: 'SELL' },
+            { symbol: 'NVDA', name: 'NVIDIA Corp.', price: 495.23, pe: 65.3, marketCap: 1200, dividend: 0.1, sector: 'technology', signal: 'BUY' },
+            { symbol: 'BAC', name: 'Bank of America', price: 34.56, pe: 10.2, marketCap: 280, dividend: 2.9, sector: 'finance', signal: 'BUY' },
+            { symbol: 'ADBE', name: 'Adobe Inc.', price: 512.34, pe: 38.7, marketCap: 230, dividend: 0.0, sector: 'technology', signal: 'HOLD' },
+            { symbol: 'PFE', name: 'Pfizer Inc.', price: 28.45, pe: 11.8, marketCap: 160, dividend: 4.2, sector: 'healthcare', signal: 'BUY' }
+        ];
+
+        // Initialize screener
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeScreener();
+            runScreening();
+            animatePageLoad();
+        });
+
+        function initializeScreener() {
+            // Initialize filter values
+            updateFilterValue('marketCap', 500);
+            updateFilterValue('pe', 25);
+            updateFilterValue('dividend', 2.5);
+            updateFilterValue('volume', 10);
+        }
+
+        function updateFilterValue(type, value) {
+            const valueElement = document.getElementById(`${type}Value`);
+            let displayValue = value;
+            
+            switch(type) {
+                case 'marketCap':
+                    displayValue = `$${value}B`;
+                    break;
+                case 'dividend':
+                    displayValue = `${value}%`;
+                    break;
+                case 'volume':
+                    displayValue = `${value}M`;
+                    break;
+                default:
+                    displayValue = value;
+            }
+            
+            if (valueElement) {
+                valueElement.textContent = displayValue;
+            }
+        }
+
+        function loadPreset(preset) {
+            // Update preset button states
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = '#374151';
+            });
+            
+            event.target.classList.add('active');
+            event.target.style.background = '#319795';
+
+            // Apply preset filters
+            switch(preset) {
+                case 'growth':
+                    document.querySelector('#peValue').textContent = '40';
+                    document.querySelector('#marketCapValue').textContent = '$100B';
+                    document.querySelector('#dividendValue').textContent = '0.5%';
+                    break;
+                case 'value':
+                    document.querySelector('#peValue').textContent = '15';
+                    document.querySelector('#marketCapValue').textContent = '$50B';
+                    document.querySelector('#dividendValue').textContent = '2.0%';
+                    break;
+                case 'dividend':
+                    document.querySelector('#peValue').textContent = '20';
+                    document.querySelector('#marketCapValue').textContent = '$200B';
+                    document.querySelector('#dividendValue').textContent = '3.0%';
+                    break;
+                case 'momentum':
+                    document.querySelector('#peValue').textContent = '30';
+                    document.querySelector('#marketCapValue').textContent = '$300B';
+                    document.querySelector('#dividendValue').textContent = '1.0%';
+                    break;
+                case 'undervalued':
+                    document.querySelector('#peValue').textContent = '12';
+                    document.querySelector('#marketCapValue').textContent = '$500B';
+                    document.querySelector('#dividendValue').textContent = '2.5%';
+                    break;
+                case 'smallcap':
+                    document.querySelector('#peValue').textContent = '25';
+                    document.querySelector('#marketCapValue').textContent = '$10B';
+                    document.querySelector('#dividendValue').textContent = '1.5%';
+                    break;
+            }
+
+            runScreening();
+            showNotification(`${preset.charAt(0).toUpperCase() + preset.slice(1)} preset loaded`, 'success');
+        }
+
+        function runScreening() {
+            // Get filter values
+            const filters = {
+                marketCap: parseFloat(document.querySelector('#marketCapValue').textContent.replace('$', '').replace('B', '')),
+                pe: parseFloat(document.querySelector('#peValue').textContent),
+                dividend: parseFloat(document.querySelector('#dividendValue').textContent.replace('%', '')),
+                volume: parseFloat(document.querySelector('#volumeValue').textContent.replace('M', '')),
+                sector: document.querySelector('#sectorFilter').value,
+                minPrice: parseFloat(document.querySelector('#minPrice').value),
+                maxPrice: parseFloat(document.querySelector('#maxPrice').value)
+            };
+
+            // Filter stocks based on criteria
+            screeningResults = sampleStocks.filter(stock => {
+                return stock.marketCap <= filters.marketCap &&
+                       stock.pe <= filters.pe &&
+                       stock.dividend >= filters.dividend &&
+                       stock.price >= filters.minPrice &&
+                       stock.price <= filters.maxPrice &&
+                       (filters.sector === '' || stock.sector === filters.sector);
+            });
+
+            displayResults();
+            showNotification(`Found ${screeningResults.length} matching stocks`, 'success');
+        }
+
+        function displayResults() {
+            const resultsElement = document.getElementById('screeningResults');
+            const countElement = document.getElementById('resultCount');
+            
+            if (!resultsElement || !countElement) return;
+
+            countElement.textContent = screeningResults.length;
+            resultsElement.innerHTML = '';
+
+            const displayResults = screeningResults.slice(0, currentPage * resultsPerPage);
+
+            displayResults.forEach((stock, index) => {
+                const row = document.createElement('tr');
+                row.className = 'result-row border-b border-gray-700';
+                
+                const signalColor = stock.signal === 'BUY' ? 'text-green-400' : 
+                                   stock.signal === 'SELL' ? 'text-red-400' : 'text-yellow-400';
+                
+                row.innerHTML = `
+                    <td class="py-3 px-2">
+                        <div class="font-semibold text-white">${stock.symbol}</div>
+                        <div class="text-xs text-gray-400">${stock.sector}</div>
+                    </td>
+                    <td class="py-3 px-2 text-gray-300 text-sm">${stock.name}</td>
+                    <td class="py-3 px-2 text-right">
+                        <div class="mono-font text-white">$${stock.price.toFixed(2)}</div>
+                    </td>
+                    <td class="py-3 px-2 text-right text-gray-300">${stock.pe}</td>
+                    <td class="py-3 px-2 text-right text-gray-300">$${stock.marketCap}B</td>
+                    <td class="py-3 px-2 text-right text-gray-300">${stock.dividend}%</td>
+                    <td class="py-3 px-2 text-center">
+                        <span class="${signalColor} font-medium text-sm">${stock.signal}</span>
+                    </td>
+                `;
+                
+                resultsElement.appendChild(row);
+
+                // Add entrance animation
+                anime({
+                    targets: row,
+                    translateX: [-50, 0],
+                    opacity: [0, 1],
+                    delay: index * 50,
+                    duration: 300,
+                    easing: 'easeOutQuad'
+                });
+            });
+        }
+
+        function calculateIntrinsicValue() {
+            const symbol = document.getElementById('calcSymbol').value.toUpperCase();
+            const currentEPS = parseFloat(document.getElementById('currentEPS').value);
+            const growthRate = parseFloat(document.getElementById('growthRate').value) / 100;
+            const discountRate = parseFloat(document.getElementById('discountRate').value) / 100;
+            const terminalGrowth = parseFloat(document.getElementById('terminalGrowth').value) / 100;
+
+            if (!currentEPS || !growthRate || !discountRate || !terminalGrowth) {
+                showNotification('Please fill in all fields', 'error');
+                return;
+            }
+
+            // DCF Calculation (simplified)
+            const years = 10;
+            let presentValue = 0;
+            
+            for (let i = 1; i <= years; i++) {
+                const futureEPS = currentEPS * Math.pow(1 + growthRate, i);
+                const discountedEPS = futureEPS / Math.pow(1 + discountRate, i);
+                presentValue += discountedEPS;
+            }
+            
+            // Terminal value
+            const terminalEPS = currentEPS * Math.pow(1 + growthRate, years);
+            const terminalValue = (terminalEPS * (1 + terminalGrowth)) / (discountRate - terminalGrowth);
+            const discountedTerminalValue = terminalValue / Math.pow(1 + discountRate, years);
+            
+            const intrinsicValue = presentValue + discountedTerminalValue;
+            const currentPrice = sampleStocks.find(s => s.symbol === symbol)?.price || 175.43;
+            const marginOfSafety = ((intrinsicValue - currentPrice) / intrinsicValue) * 100;
+
+            // Update UI
+            document.getElementById('intrinsicValue').textContent = `$${intrinsicValue.toFixed(2)}`;
+            document.getElementById('currentPriceCalc').textContent = `$${currentPrice.toFixed(2)}`;
+            document.getElementById('marginOfSafety').textContent = `${marginOfSafety.toFixed(1)}%`;
+
+            const statusElement = document.getElementById('valuationStatus');
+            if (marginOfSafety > 20) {
+                statusElement.textContent = 'Undervalued';
+                statusElement.className = 'text-sm mt-2 text-green-400';
+            } else if (marginOfSafety > 0) {
+                statusElement.textContent = 'Fair Value';
+                statusElement.className = 'text-sm mt-2 text-yellow-400';
+            } else {
+                statusElement.textContent = 'Overvalued';
+                statusElement.className = 'text-sm mt-2 text-red-400';
+            }
+
+            showNotification('Intrinsic value calculated', 'success');
+        }
+
+        function resetFilters() {
+            // Reset all filter values
+            document.querySelectorAll('.filter-slider').forEach(slider => {
+                slider.value = slider.defaultValue || slider.min;
+                slider.dispatchEvent(new Event('input'));
+            });
+            
+            document.querySelector('#sectorFilter').value = '';
+            document.querySelector('#minPrice').value = '10';
+            document.querySelector('#maxPrice').value = '1000';
+            
+            // Reset preset buttons
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = '#374151';
+            });
+            
+            runScreening();
+            showNotification('Filters reset', 'success');
+        }
+
+        function loadMoreResults() {
+            currentPage++;
+            displayResults();
+        }
+
+        function exportResults() {
+            if (screeningResults.length === 0) {
+                showNotification('No results to export', 'warning');
+                return;
+            }
+
+            // Create CSV content
+            const headers = ['Symbol', 'Company', 'Price', 'P/E Ratio', 'Market Cap (B)', 'Dividend Yield (%)', 'Sector', 'Signal'];
+            const csvContent = [
+                headers.join(','),
+                ...screeningResults.map(stock => [
+                    stock.symbol,
+                    `"${stock.name}"`,
+                    stock.price,
+                    stock.pe,
+                    stock.marketCap,
+                    stock.dividend,
+                    stock.sector,
+                    stock.signal
+                ].join(','))
+            ].join('\n');
+
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'stock_screening_results.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            showNotification('Results exported successfully', 'success');
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-20 right-6 px-6 py-3 rounded-lg text-white z-50 ${
+                type === 'success' ? 'bg-green-600' :
+                type === 'warning' ? 'bg-yellow-600' :
+                type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+            }`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            anime({
+                targets: notification,
+                translateX: [300, 0],
+                opacity: [0, 1],
+                duration: 300,
+                easing: 'easeOutQuad'
+            });
+            
+            setTimeout(() => {
+                anime({
+                    targets: notification,
+                    translateX: [0, 300],
+                    opacity: [1, 0],
+                    duration: 300,
+                    easing: 'easeInQuad',
+                    complete: () => notification.remove()
+                });
+            }, 3000);
+        }
+
+        function animatePageLoad() {
+            anime.timeline()
+                .add({
+                    targets: '.glass-card',
+                    scale: [0.95, 1],
+                    opacity: [0, 1],
+                    delay: anime.stagger(100),
+                    duration: 600,
+                    easing: 'easeOutQuad'
+                });
+        }
+    </script>
+</body>
+</html>
