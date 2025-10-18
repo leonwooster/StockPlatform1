@@ -1,0 +1,469 @@
+# StockSense Pro - Git Ignore File
+
+# ============================================
+# Backend (C# .NET)
+# ============================================
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Mono auto generated files
+mono_crash.*
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio profiler
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# NuGet Symbol Packages
+*.snupkg
+
+# MSTest test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NUNIT
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# xUnit
+*.xunit.xml
+
+# Coverlet code coverage
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# ============================================
+# Frontend (Vue 3 / Node.js)
+# ============================================
+
+# Dependencies
+node_modules/
+jspm_packages/
+bower_components/
+
+# Production build
+dist/
+dist-ssr/
+build/
+.output/
+.nuxt/
+.next/
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Vite
+.vite/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# ============================================
+# Database
+# ============================================
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# SQL Server
+*.mdf
+*.ldf
+
+# PostgreSQL
+*.dump
+
+# ============================================
+# Logs and Temporary Files
+# ============================================
+
+# Application logs
+logs/
+*.log
+log-*.txt
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================
+# API Keys and Secrets
+# ============================================
+
+# Configuration files with secrets
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+secrets.json
+*.secrets.json
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+
+# API keys
+apikeys.txt
+*.key
+*.pem
+*.pfx
+*.p12
+
+# ============================================
+# Docker
+# ============================================
+
+# Docker files
+docker-compose.override.yml
+.dockerignore
+
+# ============================================
+# Cache and Runtime
+# ============================================
+
+# Redis
+dump.rdb
+
+# Cache directories
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# ============================================
+# OS Generated Files
+# ============================================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================
+# IDEs and Editors
+# ============================================
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# ============================================
+# Package Managers
+# ============================================
+
+# npm
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# pnpm
+pnpm-lock.yaml
+
+# ============================================
+# Testing and Coverage
+# ============================================
+
+# Test results
+TestResults/
+test-results/
+*.trx
+*.coverage
+*.coveragexml
+
+# Code coverage
+coverage/
+*.lcov
+.nyc_output/
+htmlcov/
+.coverage
+.coverage.*
+
+# ============================================
+# AI/ML Models
+# ============================================
+
+# Model files (large binary files)
+*.h5
+*.pkl
+*.joblib
+*.onnx
+*.pb
+*.pt
+*.pth
+*.weights
+
+# Training data (if large)
+data/raw/
+data/processed/
+models/checkpoints/
+
+# ============================================
+# Documentation Build
+# ============================================
+
+# Sphinx documentation
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# MkDocs
+site/
+
+# ============================================
+# Miscellaneous
+# ============================================
+
+# Backup files
+*.bak
+*.backup
+*.old
+*~
+
+# Compressed files
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Certificates (should never be committed)
+*.cer
+*.crt
+*.der
+*.p7b
+*.p7c
+*.p12
+*.pfx
+*.pem
+
+# ============================================
+# Project Specific
+# ============================================
+
+# Historical data cache
+cache/historical-data/
+cache/market-data/
+
+# Generated reports
+reports/generated/
+
+# Temporary analysis files
+analysis/temp/
+
+# User uploads
+uploads/
+
+# Static assets that are generated
+public/generated/
+
+# Webpack stats
+stats.json
+
+# Storybook
+storybook-static/
+
+# ============================================
+# CI/CD
+# ============================================
+
+# GitHub Actions
+.github/workflows/*.local.yml
+
+# Azure DevOps
+.azure/
+
+# Jenkins
+.jenkins/
+
+# ============================================
+# Keep These Files
+# ============================================
+
+# Keep example/template files
+!appsettings.Example.json
+!.env.example
+!docker-compose.example.yml
+
+# Keep documentation
+!docs/**/*.md
+!README.md
+!CONTRIBUTING.md
+!LICENSE
+
+# Keep configuration templates
+!config.template.json
