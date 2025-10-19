@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    container_name: stocksensepro-db
+    environment:
+      POSTGRES_DB: stocksensepro
+      POSTGRES_USER: stocksensepro_user
+      POSTGRES_PASSWORD: stocksensepro_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - stocksensepro-network
+
+  redis:
+    image: redis:7
+    container_name: stocksensepro-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - stocksensepro-network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: stocksensepro-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - stocksensepro-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  stocksensepro-network:
+    driver: bridge
