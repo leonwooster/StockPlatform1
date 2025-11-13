@@ -23,6 +23,7 @@
                 class="flex-1 rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm tracking-wide text-white placeholder:text-slate-500 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
                 placeholder="e.g. AAPL"
                 @keyup.enter="analyzeStock"
+                @blur="loadBacktestDashboard(selectedSymbol)"
               >
               <button
                 @click="analyzeStock"
@@ -260,6 +261,8 @@
 </template>
 
 <script>
+import { backtestService } from '../services/api'
+
 export default {
   name: 'AIAgentsView',
   data() {
@@ -276,17 +279,115 @@ export default {
         { key: 'technical', label: 'Technical' },
         { key: 'sentiment', label: 'Sentiment' }
       ],
-      analysisResult: null
+      analysisResult: null,
+      backtestLoading: false,
+      backtestRunning: false,
+      backtestError: '',
+      backtestSummary: null,
+      recentPerformances: [],
+      recentLimit: 10,
+      backtestParams: {
+        lookbackDays: 90,
+        holdingPeriodDays: 5,
+        stopLossPercent: null,
+        takeProfitPercent: null
+      }
     }
   },
   computed: {
     activeAgentCount() {
       return Object.values(this.enabledAgents).filter(Boolean).length
+    },
+    hasBacktestData() {
+      return this.backtestSummary && this.backtestSummary.evaluatedSignals > 0
     }
   },
+  mounted() {
+    this.loadBacktestDashboard(this.selectedSymbol)
+  },
   methods: {
+    async loadBacktestDashboard(symbol) {
+      const normalizedSymbol = (symbol || '').trim().toUpperCase()
+
+      if (!normalizedSymbol) {
+        this.backtestSummary = null
+        this.recentPerformances = []
+        return
+      }
+
+      try {
+        this.backtestLoading = true
+        this.backtestError = ''
+        const take = Math.min(50, Math.max(5, Number(this.recentLimit || 0)))
+        this.recentLimit = take
+        const dashboard = await backtestService.getDashboard(normalizedSymbol, take)
+        this.backtestSummary = dashboard?.summary ?? null
+        this.recentPerformances = dashboard?.recentPerformances ?? []
+      } catch (error) {
+        console.error('Failed to load backtest dashboard', error)
+        this.backtestError = 'Unable to load backtest metrics. Please try again.'
+      } finally {
+        this.backtestLoading = false
+      }
+    },
+
+    async runBacktest() {
+      const normalizedSymbol = (this.selectedSymbol || '').trim().toUpperCase()
+      if (!normalizedSymbol) {
+        this.backtestError = 'Symbol is required to run a backtest.'
+        return
+      }
+
+      try {
+        this.backtestRunning = true
+        this.backtestError = ''
+
+        const endDate = new Date()
+        const startDate = new Date()
+        const lookback = Math.max(5, Number(this.backtestParams.lookbackDays || 0))
+        startDate.setDate(endDate.getDate() - lookback)
+
+        const payload = {
+          symbol: normalizedSymbol,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          holdingPeriodDays: Math.max(1, Number(this.backtestParams.holdingPeriodDays || 1)),
+          stopLossPercent: this.parseNullableNumber(this.backtestParams.stopLossPercent),
+          takeProfitPercent: this.parseNullableNumber(this.backtestParams.takeProfitPercent)
+        }
+
+        await backtestService.runBacktest(payload)
+        await this.loadBacktestDashboard(normalizedSymbol)
+      } catch (error) {
+        console.error('Failed to run backtest', error)
+        this.backtestError = error?.message || 'Backtest request failed.'
+      } finally {
+        this.backtestRunning = false
+      }
+    },
+
+    onRecentLimitChange() {
+      const sanitized = Math.min(50, Math.max(5, Number(this.recentLimit || 0)))
+      if (sanitized !== this.recentLimit) {
+        this.recentLimit = sanitized
+      }
+      this.loadBacktestDashboard(this.selectedSymbol)
+    },
+
+    parseNullableNumber(value) {
+      if (value === null || value === undefined || value === '') {
+        return null
+      }
+      const numeric = Number(value)
+      return Number.isFinite(numeric) ? numeric : null
+    },
+
     async analyzeStock() {
       if (!this.selectedSymbol || this.analyzing) return
+
+      const normalizedSymbol = this.selectedSymbol.trim().toUpperCase()
+      this.selectedSymbol = normalizedSymbol
+      this.loadBacktestDashboard(normalizedSymbol)
 
       this.analyzing = true
 
@@ -294,7 +395,7 @@ export default {
         await new Promise(resolve => setTimeout(resolve, 1500))
 
         this.analysisResult = {
-          symbol: this.selectedSymbol,
+          symbol: normalizedSymbol,
           timestamp: new Date().toISOString(),
           signal: {
             type: 'Buy',

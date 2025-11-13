@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Linq;
 using Microsoft.OpenApi.Any;
@@ -5,6 +6,7 @@ using Microsoft.OpenApi.Models;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 using StockSensePro.Core.Interfaces;
+using StockSensePro.Application.Interfaces;
 using StockSensePro.Application.Services;
 using StockSensePro.Infrastructure.Data;
 using StockSensePro.Infrastructure.Data.Repositories;
@@ -18,6 +20,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
@@ -32,10 +36,15 @@ builder.Services.AddScoped<ICacheService, RedisCacheService>();
 
 // Add repositories
 builder.Services.AddScoped<IStockRepository, DatabaseStockRepository>();
+builder.Services.AddScoped<ITradingSignalRepository, TradingSignalRepository>();
+builder.Services.AddScoped<ISignalPerformanceRepository, SignalPerformanceRepository>();
 
 // Add services
 builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
+builder.Services.AddScoped<IBacktestService, BacktestService>();
+builder.Services.AddScoped<IHistoricalPriceProvider, HistoricalPriceProvider>();
+builder.Services.AddHttpClient<IYahooFinanceService, YahooFinanceService>();
 
 // Add CORS
 builder.Services.AddCors(options =>

@@ -71,3 +71,49 @@ export const aiAgentService = {
     return response.json()
   }
 }
+
+export const backtestService = {
+  async runBacktest(payload) {
+    const response = await fetch(`${API_BASE_URL}/backtests/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || 'Failed to run backtest')
+    }
+
+    return response.json()
+  },
+
+  async getDashboard(symbol, recent = 10) {
+    const response = await fetch(`${API_BASE_URL}/backtests/${symbol}/dashboard?recent=${recent}`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch backtest dashboard for ${symbol}`)
+    }
+
+    return response.json()
+  },
+
+  async getSummary(symbol) {
+    const response = await fetch(`${API_BASE_URL}/backtests/${symbol}/summary`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch backtest summary for ${symbol}`)
+    }
+
+    return response.json()
+  },
+
+  async getRecentPerformances(symbol, take = 20) {
+    const response = await fetch(`${API_BASE_URL}/backtests/${symbol}/recent?take=${take}`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch backtest performances for ${symbol}`)
+    }
+
+    return response.json()
+  }
+}

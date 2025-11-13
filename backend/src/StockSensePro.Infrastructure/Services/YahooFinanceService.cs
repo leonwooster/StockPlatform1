@@ -7,9 +7,10 @@ namespace StockSensePro.Infrastructure.Services
 {
     public interface IYahooFinanceService
     {
-        Task<Stock?> GetStockAsync(string symbol);
-        Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, int days = 30);
-        Task<CompanyInfo?> GetCompanyInfoAsync(string symbol);
+        Task<Stock?> GetStockAsync(string symbol, CancellationToken cancellationToken = default);
+        Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, int days = 30, CancellationToken cancellationToken = default);
+        Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default);
+        Task<CompanyInfo?> GetCompanyInfoAsync(string symbol, CancellationToken cancellationToken = default);
     }
 
     public class YahooFinanceService : IYahooFinanceService
@@ -24,14 +25,14 @@ namespace StockSensePro.Infrastructure.Services
             _httpClient.BaseAddress = new Uri("https://query1.finance.yahoo.com/v8/finance/chart/");
         }
 
-        public async Task<Stock?> GetStockAsync(string symbol)
+        public async Task<Stock?> GetStockAsync(string symbol, CancellationToken cancellationToken = default)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{symbol}");
+                var response = await _httpClient.GetAsync($"{symbol}", cancellationToken);
                 response.EnsureSuccessStatusCode();
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 var result = JsonSerializer.Deserialize<YahooFinanceResponse>(json);
 
                 if (result?.Chart?.Result?.Count > 0)
@@ -52,7 +53,7 @@ namespace StockSensePro.Infrastructure.Services
                             Exchange = meta.ExchangeName,
                             Sector = meta.Sector ?? "N/A",
                             Industry = meta.Industry ?? "N/A",
-                            CurrentPrice = (decimal)quotes.Close[latestIndex],
+                            CurrentPrice = (decimal)(quotes.Close[latestIndex] ?? 0),
                             PreviousClose = (decimal)(meta.PreviousClose ?? 0),
                             Open = (decimal)(quotes.Open[latestIndex] ?? 0),
                             High = (decimal)(quotes.High[latestIndex] ?? 0),
@@ -72,17 +73,28 @@ namespace StockSensePro.Infrastructure.Services
             }
         }
 
-        public async Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, int days = 30)
+        public Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, int days = 30, CancellationToken cancellationToken = default)
+        {
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddDays(-days);
+            return GetHistoricalPricesAsync(symbol, startDate, endDate, cancellationToken);
+        }
+
+        public async Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
         {
             try
             {
-                var endDate = DateTime.UtcNow;
-                var startDate = endDate.AddDays(-days);
-                
-                var response = await _httpClient.GetAsync($"{symbol}?period1={ToUnixTimestamp(startDate)}&period2={ToUnixTimestamp(endDate)}&interval=1d");
+                if (startDate >= endDate)
+                {
+                    throw new ArgumentException("Start date must be earlier than end date.");
+                }
+
+                var response = await _httpClient.GetAsync(
+                    $"{symbol}?period1={ToUnixTimestamp(startDate)}&period2={ToUnixTimestamp(endDate)}&interval=1d",
+                    cancellationToken);
                 response.EnsureSuccessStatusCode();
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 var result = JsonSerializer.Deserialize<YahooFinanceResponse>(json);
 
                 var prices = new List<StockPrice>();
@@ -126,11 +138,11 @@ namespace StockSensePro.Infrastructure.Services
             }
         }
 
-        public async Task<CompanyInfo?> GetCompanyInfoAsync(string symbol)
+        public async Task<CompanyInfo?> GetCompanyInfoAsync(string symbol, CancellationToken cancellationToken = default)
         {
             // In a real implementation, this would fetch company info from Yahoo Finance
             // For now, we'll return null to indicate this feature needs implementation
-            return null;
+            return await Task.FromResult<CompanyInfo?>(null);
         }
 
         private long ToUnixTimestamp(DateTime dateTime)
