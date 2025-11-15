@@ -1,4 +1,5 @@
 using StockSensePro.Core.Entities;
+using StockSensePro.Core.Enums;
 using StockSensePro.Core.Interfaces;
 
 namespace StockSensePro.Infrastructure.Services
@@ -14,7 +15,7 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<IReadOnlyList<StockPrice>> GetHistoricalPricesAsync(string symbol, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
         {
-            var prices = await _yahooFinanceService.GetHistoricalPricesAsync(symbol, startDate, endDate, cancellationToken);
+            var prices = await _yahooFinanceService.GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Daily, cancellationToken);
             return prices;
         }
     }

@@ -53,6 +53,22 @@ export const stockService = {
       throw new Error(`Failed to delete stock ${symbol}`)
     }
     return response.json()
+  },
+
+  async getEquityCurveDaily(symbol, opts = {}) {
+    const params = new URLSearchParams()
+    if (opts.startDate) params.append('startDate', opts.startDate)
+    if (opts.endDate) params.append('endDate', opts.endDate)
+    if (typeof opts.compounded === 'boolean') params.append('compounded', String(opts.compounded))
+    const qs = params.toString()
+    const url = qs
+      ? `${API_BASE_URL}/backtests/${symbol}/equity-curve/daily?${qs}`
+      : `${API_BASE_URL}/backtests/${symbol}/equity-curve/daily`
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch daily equity curve for ${symbol}`)
+    }
+    return response.json()
   }
 }
 
@@ -114,6 +130,22 @@ export const backtestService = {
       throw new Error(`Failed to fetch backtest performances for ${symbol}`)
     }
 
+    return response.json()
+  },
+
+  async getEquityCurve(symbol, opts = {}) {
+    const params = new URLSearchParams()
+    if (opts.startDate) params.append('startDate', opts.startDate)
+    if (opts.endDate) params.append('endDate', opts.endDate)
+    if (typeof opts.compounded === 'boolean') params.append('compounded', String(opts.compounded))
+    const qs = params.toString()
+    const url = qs
+      ? `${API_BASE_URL}/backtests/${symbol}/equity-curve?${qs}`
+      : `${API_BASE_URL}/backtests/${symbol}/equity-curve`
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch equity curve for ${symbol}`)
+    }
     return response.json()
   }
 }

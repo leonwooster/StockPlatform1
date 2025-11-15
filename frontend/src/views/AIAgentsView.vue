@@ -52,6 +52,56 @@
           </div>
         </div>
       </div>
+      <div class="mt-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <h3 class="text-xs uppercase tracking-[0.3em] text-slate-500">Equity curve (compounded)</h3>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+            <label class="flex items-center gap-2">
+              <span class="text-slate-400">Mode</span>
+              <select v-model="equityMode" @change="applyEquityFilters" class="rounded-md border border-white/10 bg-slate-950/60 px-2 py-1 text-white">
+                <option value="trade">Trade-based</option>
+                <option value="daily">Daily</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-2">
+              <span class="text-slate-400">Start</span>
+              <input type="date" v-model="equityFilters.startDate" class="rounded-md border border-white/10 bg-slate-950/60 px-2 py-1 text-white" />
+            </label>
+            <label class="flex items-center gap-2">
+              <span class="text-slate-400">End</span>
+              <input type="date" v-model="equityFilters.endDate" class="rounded-md border border-white/10 bg-slate-950/60 px-2 py-1 text-white" />
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" v-model="equityFilters.compounded" />
+              <span>Compounded</span>
+            </label>
+            <button @click="applyEquityFilters" class="rounded-md border border-white/10 bg-white/10 px-3 py-1 text-white hover:border-primary-400/40 hover:bg-primary-500/10">Apply</button>
+            <button @click="resetEquityFilters" class="rounded-md border border-white/10 bg-white/10 px-3 py-1 text-white hover:border-primary-400/40 hover:bg-primary-500/10">Reset</button>
+            <span v-if="equityCurve && equityCurve.length" class="ml-2 text-slate-400">Last: {{ formatPrice(equityCurve[equityCurve.length-1].equity ?? equityCurve[equityCurve.length-1].Equity) }}</span>
+          </div>
+        </div>
+        <div v-if="equityError" class="mt-2 rounded-md border border-rose-400/30 bg-rose-500/10 p-2 text-xs text-rose-100">{{ equityError }}</div>
+        <div v-if="equityLoading" class="mt-2 text-xs text-slate-400">Loading…</div>
+        <div v-else-if="!equityCurve || equityCurve.length === 0" class="mt-2 text-xs text-slate-400">No equity data available.</div>
+        <div v-else class="mt-2 relative">
+          <svg :width="'100%'" height="60" viewBox="0 0 300 60" preserveAspectRatio="none"
+            @mousemove="onSparklineMove" @mouseleave="onSparklineLeave">
+            <defs>
+              <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#10b981" stop-opacity="0.9"/>
+                <stop offset="100%" stop-color="#10b981" stop-opacity="0.2"/>
+              </linearGradient>
+            </defs>
+            <path :d="equityCurvePath" fill="none" stroke="url(#eqGrad)" stroke-width="2"/>
+            <circle v-if="equityHoverIndex >= 0" :cx="equityPoints[equityHoverIndex]?.x" :cy="equityPoints[equityHoverIndex]?.y" r="2.5" fill="#fff"/>
+          </svg>
+          <div v-if="equityHoverIndex >= 0" class="pointer-events-none absolute -top-1 -translate-x-1/2 rounded-md border border-white/10 bg-slate-900/90 px-2 py-1 text-[10px] text-slate-200"
+               :style="{ left: equityHoverLeft + 'px' }">
+            <div>{{ new Date(equityCurve[equityHoverIndex].timestamp || equityCurve[equityHoverIndex].Timestamp).toLocaleDateString() }}</div>
+            <div>Equity: {{ formatPrice(equityCurve[equityHoverIndex].equity ?? equityCurve[equityHoverIndex].Equity) }}</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section v-if="analysisResult" class="space-y-6">
@@ -240,21 +290,70 @@
       <h2 class="text-sm font-semibold text-white">Desk performance snapshot</h2>
       <div class="mt-6 grid gap-4 md:grid-cols-4">
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-          <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Signal accuracy</p>
-          <p class="mt-3 text-2xl font-semibold text-white">72%</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Cumulative return</p>
+          <p class="mt-3 text-2xl font-semibold" :class="valueClass(backtestSummary?.cumulativeReturn)">
+            {{ backtestLoading ? 'Loading…' : formatPercent(backtestSummary?.cumulativeReturn) }}
+          </p>
         </div>
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
           <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Average return</p>
-          <p class="mt-3 text-2xl font-semibold text-emerald-200">12.4%</p>
+          <p class="mt-3 text-2xl font-semibold" :class="valueClass(backtestSummary?.averageReturn)">
+            {{ backtestLoading ? 'Loading…' : formatPercent(backtestSummary?.averageReturn) }}
+          </p>
         </div>
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
           <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Win rate</p>
-          <p class="mt-3 text-2xl font-semibold text-primary-200">68%</p>
+          <p class="mt-3 text-2xl font-semibold text-primary-200">
+            {{ backtestLoading ? 'Loading…' : formatPercent(backtestSummary?.winRate) }}
+          </p>
         </div>
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-          <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Signals generated</p>
-          <p class="mt-3 text-2xl font-semibold text-white">42</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Signals evaluated</p>
+          <p class="mt-3 text-2xl font-semibold text-white">
+            {{ backtestLoading ? '…' : (backtestSummary?.evaluatedSignals ?? 0) }}
+          </p>
         </div>
+      </div>
+    </section>
+    
+    <section class="rounded-3xl border border-white/5 bg-slate-900/60 p-6 shadow-soft mt-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-white">Recent performances</h2>
+        <div class="flex items-center gap-2 text-xs">
+          <label for="recentLimit" class="text-slate-400">Show</label>
+          <input id="recentLimit" type="number" min="5" max="50" v-model.number="recentLimit" @change="onRecentLimitChange" class="w-16 rounded-md border border-white/10 bg-slate-950/60 px-2 py-1 text-white" />
+        </div>
+      </div>
+      <div v-if="backtestError" class="mt-4 rounded-lg border border-rose-400/30 bg-rose-500/10 p-3 text-rose-100 text-xs">
+        {{ backtestError }}
+      </div>
+      <div v-else-if="backtestLoading" class="mt-4 text-xs text-slate-400">Loading…</div>
+      <div v-else-if="!recentPerformances || recentPerformances.length === 0" class="mt-4 text-xs text-slate-400">No recent performances to display.</div>
+      <div v-else class="mt-4 overflow-x-auto">
+        <table class="min-w-full text-left text-xs text-slate-200">
+          <thead>
+            <tr class="border-b border-white/10 text-slate-400">
+              <th class="py-2 pr-4">Date</th>
+              <th class="py-2 pr-4">Return</th>
+              <th class="py-2 pr-4">Days</th>
+              <th class="py-2 pr-4">Entry</th>
+              <th class="py-2 pr-4">Exit</th>
+              <th class="py-2 pr-4">Max DD</th>
+              <th class="py-2 pr-4">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in recentPerformances" :key="p.id" class="border-b border-white/5">
+              <td class="py-2 pr-4">{{ formatDate(p.evaluatedAt) }}</td>
+              <td class="py-2 pr-4" :class="valueClass(p.actualReturn)">{{ formatPercent(p.actualReturn) }}</td>
+              <td class="py-2 pr-4">{{ p.daysHeld }}</td>
+              <td class="py-2 pr-4">{{ formatPrice(p.entryPrice) }}</td>
+              <td class="py-2 pr-4">{{ formatPrice(p.exitPrice) }}</td>
+              <td class="py-2 pr-4">{{ formatPercent(p.maxDrawdown) }}</td>
+              <td class="py-2 pr-4 truncate max-w-[200px]" :title="p.notes">{{ p.notes || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
   </div>
@@ -286,6 +385,20 @@ export default {
       backtestSummary: null,
       recentPerformances: [],
       recentLimit: 10,
+      equityCurve: [],
+      equityCurvePath: '',
+      equityLoading: false,
+      equityError: '',
+      equityFilters: {
+        startDate: '', // 'YYYY-MM-DD'
+        endDate: '',   // 'YYYY-MM-DD'
+        compounded: true
+      },
+      equityMode: 'trade',
+      equityPoints: [],
+      equityHoverIndex: -1,
+      equityHoverLeft: 0,
+      equityHoverTop: 0,
       backtestParams: {
         lookbackDays: 90,
         holdingPeriodDays: 5,
@@ -320,15 +433,138 @@ export default {
         this.backtestError = ''
         const take = Math.min(50, Math.max(5, Number(this.recentLimit || 0)))
         this.recentLimit = take
-        const dashboard = await backtestService.getDashboard(normalizedSymbol, take)
+        const curveOpts = {}
+        if (this.equityFilters.startDate) curveOpts.startDate = this.equityFilters.startDate
+        if (this.equityFilters.endDate) curveOpts.endDate = this.equityFilters.endDate
+        curveOpts.compounded = !!this.equityFilters.compounded
+
+        const dashboardPromise = backtestService.getDashboard(normalizedSymbol, take)
+        const curvePromise = this.equityMode === 'daily'
+          ? backtestService.getEquityCurveDaily(normalizedSymbol, curveOpts)
+          : backtestService.getEquityCurve(normalizedSymbol, curveOpts)
+        const [dashboard, curve] = await Promise.all([dashboardPromise, curvePromise])
         this.backtestSummary = dashboard?.summary ?? null
         this.recentPerformances = dashboard?.recentPerformances ?? []
+        this.equityCurve = Array.isArray(curve) ? curve : []
+        this.equityCurvePath = this.computeSparklinePath(this.equityCurve, 300, 60, 6)
+        this.equityPoints = this.computeSparklinePoints(this.equityCurve, 300, 60, 6)
       } catch (error) {
         console.error('Failed to load backtest dashboard', error)
         this.backtestError = 'Unable to load backtest metrics. Please try again.'
       } finally {
         this.backtestLoading = false
       }
+    },
+
+    async loadEquityCurve(symbol) {
+      const normalized = (symbol || '').trim().toUpperCase()
+      if (!normalized) {
+        this.equityCurve = []
+        this.equityCurvePath = ''
+        return
+      }
+
+      try {
+        this.equityLoading = true
+        this.equityError = ''
+        const opts = {}
+        if (this.equityFilters.startDate) opts.startDate = this.equityFilters.startDate
+        if (this.equityFilters.endDate) opts.endDate = this.equityFilters.endDate
+        opts.compounded = !!this.equityFilters.compounded
+        const curve = this.equityMode === 'daily'
+          ? await backtestService.getEquityCurveDaily(normalized, opts)
+          : await backtestService.getEquityCurve(normalized, opts)
+        this.equityCurve = Array.isArray(curve) ? curve : []
+        this.equityCurvePath = this.computeSparklinePath(this.equityCurve, 300, 60, 6)
+        this.equityPoints = this.computeSparklinePoints(this.equityCurve, 300, 60, 6)
+      } catch (e) {
+        console.error('Failed to load equity curve', e)
+        this.equityError = 'Unable to load equity curve.'
+      } finally {
+        this.equityLoading = false
+      }
+    },
+
+    applyEquityFilters() {
+      // Basic validation: if both dates present, ensure start <= end
+      if (this.equityFilters.startDate && this.equityFilters.endDate) {
+        if (new Date(this.equityFilters.startDate) > new Date(this.equityFilters.endDate)) {
+          this.equityError = 'Start date must be on or before end date.'
+          return
+        }
+      }
+      this.loadEquityCurve(this.selectedSymbol)
+    },
+
+    resetEquityFilters() {
+      this.equityFilters.startDate = ''
+      this.equityFilters.endDate = ''
+      this.equityFilters.compounded = true
+      this.equityError = ''
+      this.loadEquityCurve(this.selectedSymbol)
+    },
+
+    computeSparklinePath(curve, width = 300, height = 60, pad = 6) {
+      if (!Array.isArray(curve) || curve.length === 0) return ''
+      const xs = curve.map((_, i) => i)
+      const ys = curve.map(p => Number(p.equity ?? p.Equity ?? 0))
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+      const rangeY = maxY - minY || 1
+      const innerW = width - 2 * pad
+      const innerH = height - 2 * pad
+      const stepX = xs.length > 1 ? innerW / (xs.length - 1) : innerW
+
+      const points = ys.map((y, idx) => {
+        const x = pad + idx * stepX
+        // invert y for SVG (0 at top)
+        const ny = pad + innerH - ((y - minY) / rangeY) * innerH
+        return `${x.toFixed(2)},${ny.toFixed(2)}`
+      })
+
+      return `M ${points[0]} L ${points.slice(1).join(' ')}`
+    },
+
+    computeSparklinePoints(curve, width = 300, height = 60, pad = 6) {
+      if (!Array.isArray(curve) || curve.length === 0) return []
+      const ys = curve.map(p => Number(p.equity ?? p.Equity ?? 0))
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+      const rangeY = maxY - minY || 1
+      const innerW = width - 2 * pad
+      const innerH = height - 2 * pad
+      const stepX = ys.length > 1 ? innerW / (ys.length - 1) : innerW
+      return ys.map((y, idx) => {
+        const x = pad + idx * stepX
+        const ny = pad + innerH - ((y - minY) / rangeY) * innerH
+        return { x, y: ny }
+      })
+    },
+
+    onSparklineMove(event) {
+      if (!this.equityPoints || this.equityPoints.length === 0) return
+      const svg = event.currentTarget
+      const rect = svg.getBoundingClientRect()
+      const viewW = 300
+      const scaleX = viewW / rect.width
+      const xSvg = (event.clientX - rect.left) * scaleX
+      // find nearest point by x
+      let nearest = 0
+      let best = Infinity
+      for (let i = 0; i < this.equityPoints.length; i++) {
+        const dx = Math.abs(this.equityPoints[i].x - xSvg)
+        if (dx < best) {
+          best = dx
+          nearest = i
+        }
+      }
+      this.equityHoverIndex = nearest
+      this.equityHoverLeft = event.clientX - rect.left
+      this.equityHoverTop = 0
+    },
+
+    onSparklineLeave() {
+      this.equityHoverIndex = -1
     },
 
     async runBacktest() {
@@ -493,6 +729,32 @@ export default {
       if (score <= 30) return 'bg-emerald-400'
       if (score <= 70) return 'bg-amber-400'
       return 'bg-rose-400'
+    },
+
+    // Formatting helpers for snapshot cards and recent-performances table
+    formatPercent(value) {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return '-'
+      return `${n.toFixed(2)}%`
+    },
+
+    formatPrice(value) {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return '-'
+      return `$${n.toFixed(2)}`
+    },
+
+    formatDate(value) {
+      if (!value) return '-'
+      const d = new Date(value)
+      if (isNaN(d.getTime())) return '-'
+      return d.toLocaleDateString()
+    },
+
+    valueClass(value) {
+      const n = Number(value)
+      if (!Number.isFinite(n) || n === 0) return 'text-slate-200'
+      return n > 0 ? 'text-emerald-200' : 'text-rose-300'
     }
   }
 }

@@ -3,6 +3,7 @@ using StockSensePro.API.Models;
 using StockSensePro.Application.Interfaces;
 using StockSensePro.Application.Models;
 using System.Linq;
+using System;
 
 namespace StockSensePro.API.Controllers
 {
@@ -88,6 +89,45 @@ namespace StockSensePro.API.Controllers
             };
 
             return Ok(response);
+        }
+
+        [HttpGet("{symbol}/equity-curve")]
+        public async Task<ActionResult<IReadOnlyList<EquityCurvePoint>>> GetEquityCurve(
+            string symbol,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] bool compounded = true,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                return BadRequest("Symbol is required.");
+            }
+
+            var curve = await _backtestService.GetEquityCurveAsync(symbol, startDate, endDate, compounded, cancellationToken);
+            return Ok(curve);
+        }
+
+        [HttpGet("{symbol}/equity-curve/daily")]
+        public async Task<ActionResult<IReadOnlyList<EquityCurvePoint>>> GetEquityCurveDaily(
+            string symbol,
+            [FromQuery] DateTime startDate,
+            [FromQuery] DateTime endDate,
+            [FromQuery] bool compounded = true,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                return BadRequest("Symbol is required.");
+            }
+
+            if (startDate == default || endDate == default || startDate > endDate)
+            {
+                return BadRequest("Valid startDate and endDate are required, and startDate must be before or equal to endDate.");
+            }
+
+            var curve = await _backtestService.GetEquityCurveDailyAsync(symbol, startDate, endDate, compounded, cancellationToken);
+            return Ok(curve);
         }
     }
 }

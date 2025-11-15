@@ -5,6 +5,8 @@ using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
+using Polly;
+using Polly.Extensions.Http;
 using StockSensePro.Core.Interfaces;
 using StockSensePro.Application.Interfaces;
 using StockSensePro.Application.Services;
@@ -44,7 +46,106 @@ builder.Services.AddScoped<IStockService, StockService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddScoped<IBacktestService, BacktestService>();
 builder.Services.AddScoped<IHistoricalPriceProvider, HistoricalPriceProvider>();
-builder.Services.AddHttpClient<IYahooFinanceService, YahooFinanceService>();
+
+// Configure named HttpClients for YahooFinanceService with Polly resilience policies
+builder.Services.AddHttpClient("YahooFinanceChart", client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/v8/finance/chart/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetCircuitBreakerPolicy())
+.AddPolicyHandler(GetTimeoutPolicy());
+
+builder.Services.AddHttpClient("YahooFinanceQuote", client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/v7/finance/quote/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetCircuitBreakerPolicy())
+.AddPolicyHandler(GetTimeoutPolicy());
+
+builder.Services.AddHttpClient("YahooFinanceSummary", client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/v10/finance/quoteSummary/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetCircuitBreakerPolicy())
+.AddPolicyHandler(GetTimeoutPolicy());
+
+builder.Services.AddHttpClient("YahooFinanceSearch", client =>
+{
+    client.BaseAddress = new Uri("https://query2.finance.yahoo.com/v1/finance/search");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetCircuitBreakerPolicy())
+.AddPolicyHandler(GetTimeoutPolicy());
+
+// Register YahooFinanceService
+builder.Services.AddScoped<IYahooFinanceService, YahooFinanceService>();
+
+// Register IStockDataProvider (using YahooFinanceService as the implementation)
+builder.Services.AddScoped<IStockDataProvider>(sp => sp.GetRequiredService<IYahooFinanceService>());
+
+// Polly policy definitions
+static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+{
+    return HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        .WaitAndRetryAsync(
+            retryCount: 3,
+            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
+            onRetry: (outcome, timespan, retryCount, context) =>
+            {
+                var logger = context.GetLogger();
+                if (logger != null)
+                {
+                    logger.LogWarning(
+                        "Retry {RetryCount} after {Delay}s due to {Reason}",
+                        retryCount,
+                        timespan.TotalSeconds,
+                        outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown");
+                }
+            });
+}
+
+static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+{
+    return HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        .CircuitBreakerAsync(
+            handledEventsAllowedBeforeBreaking: 5,
+            durationOfBreak: TimeSpan.FromSeconds(30),
+            onBreak: (outcome, duration, context) =>
+            {
+                var logger = context.GetLogger();
+                if (logger != null)
+                {
+                    logger.LogWarning(
+                        "Circuit breaker opened for {Duration}s due to {Reason}",
+                        duration.TotalSeconds,
+                        outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown");
+                }
+            },
+            onReset: (context) =>
+            {
+                var logger = context.GetLogger();
+                if (logger != null)
+                {
+                    logger.LogInformation("Circuit breaker reset");
+                }
+            });
+}
+
+static IAsyncPolicy<HttpResponseMessage> GetTimeoutPolicy()
+{
+    return Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(10));
+}
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -120,3 +221,27 @@ app.MapControllers();
 await DatabaseInitializer.InitializeAsync(app.Services);
 
 app.Run();
+
+// Extension method for Polly context to get logger
+public static class PollyContextExtensions
+{
+    private const string LoggerKey = "ILogger";
+
+    public static Context WithLogger(this Context context, ILogger logger)
+    {
+        context[LoggerKey] = logger;
+        return context;
+    }
+
+    public static ILogger? GetLogger(this Context context)
+    {
+        if (context.TryGetValue(LoggerKey, out var logger))
+        {
+            return logger as ILogger;
+        }
+        return null;
+    }
+}
+
+// Make Program class accessible to integration tests
+public partial class Program { }

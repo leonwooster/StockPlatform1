@@ -4,6 +4,7 @@ using StockSensePro.Application.Models;
 using StockSensePro.Core.Entities;
 using StockSensePro.Core.Interfaces;
 using System.Linq;
+using System.Collections.Concurrent;
 
 namespace StockSensePro.Application.Services
 {
@@ -13,6 +14,16 @@ namespace StockSensePro.Application.Services
         private readonly ISignalPerformanceRepository _signalPerformanceRepository;
         private readonly IHistoricalPriceProvider _historicalPriceProvider;
         private readonly ILogger<BacktestService> _logger;
+
+        // Simple in-memory cache for equity curve results
+        private static readonly ConcurrentDictionary<string, CacheItem> _equityCurveCache = new();
+        private static readonly TimeSpan _equityCurveTtl = TimeSpan.FromMinutes(5);
+
+        private sealed class CacheItem
+        {
+            public DateTime CachedAtUtc { get; init; }
+            public IReadOnlyList<EquityCurvePoint> Points { get; init; } = Array.Empty<EquityCurvePoint>();
+        }
 
         public BacktestService(
             ITradingSignalRepository tradingSignalRepository,
@@ -141,6 +152,9 @@ namespace StockSensePro.Application.Services
             await _signalPerformanceRepository.AddRangeAsync(performances, cancellationToken);
             await _signalPerformanceRepository.SaveChangesAsync(cancellationToken);
 
+            // Invalidate cached equity curve data for this symbol
+            InvalidateEquityCurveCacheForSymbol(symbol);
+
             return backtestResult;
         }
 
@@ -175,6 +189,160 @@ namespace StockSensePro.Application.Services
             summary.LastEvaluatedAt = performances.Max(p => p.EvaluatedAt);
 
             return summary;
+        }
+
+        public async Task<IReadOnlyList<EquityCurvePoint>> GetEquityCurveAsync(string symbol, DateTime? startDate = null, DateTime? endDate = null, bool compounded = true, CancellationToken cancellationToken = default)
+        {
+            var normalized = symbol.ToUpperInvariant();
+            var cacheKey = $"trade:{normalized}:{startDate?.Date:yyyy-MM-dd}:{endDate?.Date:yyyy-MM-dd}:{compounded}";
+            if (TryGetEquityCache(cacheKey, out var cached)) return cached;
+            var performances = await _signalPerformanceRepository.GetBySymbolAsync(normalized, cancellationToken);
+
+            if (performances is null || performances.Count == 0)
+            {
+                return Array.Empty<EquityCurvePoint>();
+            }
+
+            var filtered = performances.AsEnumerable();
+            if (startDate.HasValue)
+            {
+                var s = startDate.Value.Date;
+                filtered = filtered.Where(p => p.EvaluatedAt.Date >= s);
+            }
+            if (endDate.HasValue)
+            {
+                var e = endDate.Value.Date;
+                filtered = filtered.Where(p => p.EvaluatedAt.Date <= e);
+            }
+
+            var ordered = filtered.OrderBy(p => p.EvaluatedAt).ToList();
+
+            var points = new List<EquityCurvePoint>(ordered.Count);
+            decimal equity = 100m; // start at index 100
+            decimal cumReturn = 0m; // for additive mode
+
+            foreach (var p in ordered)
+            {
+                if (compounded)
+                {
+                    var factor = 1m + (p.ActualReturn / 100m);
+                    equity = equity * factor;
+                }
+                else
+                {
+                    cumReturn += p.ActualReturn;
+                    equity = 100m + cumReturn;
+                }
+                points.Add(new EquityCurvePoint
+                {
+                    Timestamp = p.EvaluatedAt,
+                    Equity = Math.Round(equity, 2)
+                });
+            }
+
+            SetEquityCache(cacheKey, points);
+            return points;
+        }
+
+        public async Task<IReadOnlyList<EquityCurvePoint>> GetEquityCurveDailyAsync(string symbol, DateTime startDate, DateTime endDate, bool compounded = true, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                return Array.Empty<EquityCurvePoint>();
+            }
+
+            if (startDate.Date > endDate.Date)
+            {
+                return Array.Empty<EquityCurvePoint>();
+            }
+
+            var normalized = symbol.ToUpperInvariant();
+            var cacheKey = $"daily:{normalized}:{startDate.Date:yyyy-MM-dd}:{endDate.Date:yyyy-MM-dd}:{compounded}";
+            if (TryGetEquityCache(cacheKey, out var cached)) return cached;
+            var performances = await _signalPerformanceRepository.GetBySymbolAsync(normalized, cancellationToken);
+            if (performances is null || performances.Count == 0)
+            {
+                return Array.Empty<EquityCurvePoint>();
+            }
+
+            var start = startDate.Date;
+            var end = endDate.Date;
+
+            var byDay = performances
+                .Where(p => p.EvaluatedAt.Date >= start && p.EvaluatedAt.Date <= end)
+                .GroupBy(p => p.EvaluatedAt.Date)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var result = new List<EquityCurvePoint>();
+            decimal equity = 100m;
+            decimal cumReturn = 0m;
+
+            for (var d = start; d <= end; d = d.AddDays(1))
+            {
+                if (byDay.TryGetValue(d, out var dayPerf))
+                {
+                    if (compounded)
+                    {
+                        foreach (var p in dayPerf.OrderBy(p => p.EvaluatedAt))
+                        {
+                            var factor = 1m + (p.ActualReturn / 100m);
+                            equity *= factor;
+                        }
+                    }
+                    else
+                    {
+                        var sum = dayPerf.Sum(p => p.ActualReturn);
+                        cumReturn += sum;
+                        equity = 100m + cumReturn;
+                    }
+                }
+
+                result.Add(new EquityCurvePoint
+                {
+                    Timestamp = d,
+                    Equity = Math.Round(equity, 2)
+                });
+            }
+
+            SetEquityCache(cacheKey, result);
+            return result;
+        }
+
+        private static bool TryGetEquityCache(string key, out IReadOnlyList<EquityCurvePoint> points)
+        {
+            points = Array.Empty<EquityCurvePoint>();
+            if (_equityCurveCache.TryGetValue(key, out var item))
+            {
+                if (DateTime.UtcNow - item.CachedAtUtc <= _equityCurveTtl)
+                {
+                    points = item.Points;
+                    return true;
+                }
+                _equityCurveCache.TryRemove(key, out _);
+            }
+            return false;
+        }
+
+        private static void SetEquityCache(string key, IReadOnlyList<EquityCurvePoint> points)
+        {
+            _equityCurveCache[key] = new CacheItem
+            {
+                CachedAtUtc = DateTime.UtcNow,
+                Points = points
+            };
+        }
+
+        private static void InvalidateEquityCurveCacheForSymbol(string symbol)
+        {
+            var prefixTrade = $"trade:{symbol}:";
+            var prefixDaily = $"daily:{symbol}:";
+            foreach (var k in _equityCurveCache.Keys)
+            {
+                if (k.StartsWith(prefixTrade, StringComparison.OrdinalIgnoreCase) || k.StartsWith(prefixDaily, StringComparison.OrdinalIgnoreCase))
+                {
+                    _equityCurveCache.TryRemove(k, out _);
+                }
+            }
         }
 
         private StockPrice? EvaluateExitPrice(List<StockPrice> evaluationPrices, StockPrice entryPrice, BacktestRequest request)
