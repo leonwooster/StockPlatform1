@@ -262,5 +262,229 @@ namespace StockSensePro.UnitTests
             // Assert
             Assert.False(result);
         }
+
+        // ===== GetHistoricalPricesAsync Date Validation Tests =====
+
+        [Fact]
+        public async Task GetHistoricalPricesAsync_WithStartDateAfterEndDate_ThrowsInvalidDateRangeException()
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var startDate = DateTime.UtcNow;
+            var endDate = DateTime.UtcNow.AddDays(-30);
+            var service = CreateService();
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<InvalidDateRangeException>(
+                () => service.GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Daily));
+            
+            Assert.Contains("must be earlier than", exception.Message);
+            Assert.Equal(symbol, exception.Symbol);
+        }
+
+        [Fact]
+        public async Task GetHistoricalPricesAsync_WithStartDateEqualToEndDate_ThrowsInvalidDateRangeException()
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var date = DateTime.UtcNow;
+            var service = CreateService();
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<InvalidDateRangeException>(
+                () => service.GetHistoricalPricesAsync(symbol, date, date, TimeInterval.Daily));
+            
+            Assert.Contains("must be earlier than", exception.Message);
+            Assert.Equal(symbol, exception.Symbol);
+        }
+
+        [Fact]
+        public async Task GetHistoricalPricesAsync_WithDateRangeExceeding5Years_ThrowsInvalidDateRangeException()
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddYears(-6); // 6 years ago
+            var service = CreateService();
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<InvalidDateRangeException>(
+                () => service.GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Daily));
+            
+            Assert.Contains("exceeds maximum allowed period of 5 years", exception.Message);
+            Assert.Equal(symbol, exception.Symbol);
+        }
+
+        [Fact]
+        public async Task GetHistoricalPricesAsync_WithValidDateRangeUnder5Years_DoesNotThrowException()
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddYears(-4); // 4 years ago - valid
+            var responseJson = @"{
+                ""chart"": {
+                    ""result"": [{
+                        ""timestamp"": [1609459200],
+                        ""indicators"": {
+                            ""quote"": [{
+                                ""open"": [130.0],
+                                ""high"": [135.0],
+                                ""low"": [128.0],
+                                ""close"": [132.0],
+                                ""volume"": [100000000]
+                            }]
+                        }
+                    }]
+                }
+            }";
+
+            SetupHttpClient("YahooFinanceChart", HttpStatusCode.OK, responseJson);
+            var service = CreateService();
+
+            // Act
+            var result = await service.GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Daily);
+
+            // Assert
+            Assert.NotNull(result);
+            // Should not throw InvalidDateRangeException
+        }
+
+        // ===== GetHistoricalPricesAsync TimeInterval Tests =====
+
+        [Theory]
+        [InlineData(TimeInterval.Daily, "1d")]
+        [InlineData(TimeInterval.Weekly, "1wk")]
+        [InlineData(TimeInterval.Monthly, "1mo")]
+        public async Task GetHistoricalPricesAsync_WithDifferentIntervals_UsesCorrectApiParameter(
+            TimeInterval interval, 
+            string expectedIntervalParam)
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddDays(-90);
+            var responseJson = @"{
+                ""chart"": {
+                    ""result"": [{
+                        ""timestamp"": [1609459200, 1609545600],
+                        ""indicators"": {
+                            ""quote"": [{
+                                ""open"": [130.0, 131.0],
+                                ""high"": [135.0, 136.0],
+                                ""low"": [128.0, 129.0],
+                                ""close"": [132.0, 133.0],
+                                ""volume"": [100000000, 110000000]
+                            }]
+                        }
+                    }]
+                }
+            }";
+
+            HttpRequestMessage? capturedRequest = null;
+            _mockHttpMessageHandler
+                .Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .Callback<HttpRequestMessage, CancellationToken>((req, ct) => capturedRequest = req)
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(responseJson)
+                });
+
+            var httpClient = new HttpClient(_mockHttpMessageHandler.Object)
+            {
+                BaseAddress = new Uri("https://test.com/")
+            };
+
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient("YahooFinanceChart"))
+                .Returns(httpClient);
+
+            var service = CreateService();
+
+            // Act
+            var result = await service.GetHistoricalPricesAsync(symbol, startDate, endDate, interval);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.NotNull(capturedRequest);
+            Assert.Contains($"interval={expectedIntervalParam}", capturedRequest.RequestUri?.ToString());
+        }
+
+        [Fact]
+        public async Task GetHistoricalPricesAsync_WithWeeklyInterval_ReturnsHistoricalPrices()
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddMonths(-6);
+            var responseJson = @"{
+                ""chart"": {
+                    ""result"": [{
+                        ""timestamp"": [1609459200, 1610064000, 1610668800],
+                        ""indicators"": {
+                            ""quote"": [{
+                                ""open"": [130.0, 132.0, 135.0],
+                                ""high"": [135.0, 137.0, 140.0],
+                                ""low"": [128.0, 130.0, 133.0],
+                                ""close"": [132.0, 134.0, 137.0],
+                                ""volume"": [500000000, 520000000, 510000000]
+                            }]
+                        }
+                    }]
+                }
+            }";
+
+            SetupHttpClient("YahooFinanceChart", HttpStatusCode.OK, responseJson);
+            var service = CreateService();
+
+            // Act
+            var result = await service.GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Weekly);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(3, result.Count);
+            Assert.All(result, price => Assert.Equal(symbol, price.Symbol));
+        }
+
+        [Fact]
+        public async Task GetHistoricalPricesAsync_WithMonthlyInterval_ReturnsHistoricalPrices()
+        {
+            // Arrange
+            var symbol = "AAPL";
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddYears(-2);
+            var responseJson = @"{
+                ""chart"": {
+                    ""result"": [{
+                        ""timestamp"": [1609459200, 1612137600, 1614556800],
+                        ""indicators"": {
+                            ""quote"": [{
+                                ""open"": [130.0, 135.0, 140.0],
+                                ""high"": [140.0, 145.0, 150.0],
+                                ""low"": [125.0, 130.0, 135.0],
+                                ""close"": [135.0, 140.0, 145.0],
+                                ""volume"": [2000000000, 2100000000, 2050000000]
+                            }]
+                        }
+                    }]
+                }
+            }";
+
+            SetupHttpClient("YahooFinanceChart", HttpStatusCode.OK, responseJson);
+            var service = CreateService();
+
+            // Act
+            var result = await service.GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Monthly);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(3, result.Count);
+            Assert.All(result, price => Assert.Equal(symbol, price.Symbol));
+        }
     }
 }

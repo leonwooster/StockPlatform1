@@ -8,6 +8,7 @@ using StackExchange.Redis;
 using Polly;
 using Polly.Extensions.Http;
 using StockSensePro.Core.Interfaces;
+using StockSensePro.Core.Configuration;
 using StockSensePro.Application.Interfaces;
 using StockSensePro.Application.Services;
 using StockSensePro.Infrastructure.Data;
@@ -15,8 +16,25 @@ using StockSensePro.Infrastructure.Data.Repositories;
 using StockSensePro.Infrastructure.Services;
 using StockSensePro.AI.Services;
 using StockSensePro.API.Filters;
+using StockSensePro.API.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Bind configuration settings
+var yahooFinanceSettings = builder.Configuration
+    .GetSection(YahooFinanceSettings.SectionName)
+    .Get<YahooFinanceSettings>() ?? new YahooFinanceSettings();
+
+var cacheSettings = builder.Configuration
+    .GetSection(CacheSettings.SectionName)
+    .Get<CacheSettings>() ?? new CacheSettings();
+
+// Register configuration settings as singletons
+builder.Services.AddSingleton(yahooFinanceSettings);
+builder.Services.AddSingleton(cacheSettings);
+
+// Register rate limit metrics as singleton for tracking across requests
+builder.Services.AddSingleton<RateLimitMetrics>();
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -48,41 +66,43 @@ builder.Services.AddScoped<IBacktestService, BacktestService>();
 builder.Services.AddScoped<IHistoricalPriceProvider, HistoricalPriceProvider>();
 
 // Configure named HttpClients for YahooFinanceService with Polly resilience policies
+var timeout = TimeSpan.FromSeconds(yahooFinanceSettings.Timeout);
+
 builder.Services.AddHttpClient("YahooFinanceChart", client =>
 {
-    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/v8/finance/chart/");
-    client.Timeout = TimeSpan.FromSeconds(10);
+    client.BaseAddress = new Uri($"{yahooFinanceSettings.BaseUrl}/v8/finance/chart/");
+    client.Timeout = timeout;
 })
-.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetRetryPolicy(yahooFinanceSettings.MaxRetries))
 .AddPolicyHandler(GetCircuitBreakerPolicy())
-.AddPolicyHandler(GetTimeoutPolicy());
+.AddPolicyHandler(GetTimeoutPolicy(timeout));
 
 builder.Services.AddHttpClient("YahooFinanceQuote", client =>
 {
-    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/v7/finance/quote/");
-    client.Timeout = TimeSpan.FromSeconds(10);
+    client.BaseAddress = new Uri($"{yahooFinanceSettings.BaseUrl}/v7/finance/quote/");
+    client.Timeout = timeout;
 })
-.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetRetryPolicy(yahooFinanceSettings.MaxRetries))
 .AddPolicyHandler(GetCircuitBreakerPolicy())
-.AddPolicyHandler(GetTimeoutPolicy());
+.AddPolicyHandler(GetTimeoutPolicy(timeout));
 
 builder.Services.AddHttpClient("YahooFinanceSummary", client =>
 {
-    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/v10/finance/quoteSummary/");
-    client.Timeout = TimeSpan.FromSeconds(10);
+    client.BaseAddress = new Uri($"{yahooFinanceSettings.BaseUrl}/v10/finance/quoteSummary/");
+    client.Timeout = timeout;
 })
-.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetRetryPolicy(yahooFinanceSettings.MaxRetries))
 .AddPolicyHandler(GetCircuitBreakerPolicy())
-.AddPolicyHandler(GetTimeoutPolicy());
+.AddPolicyHandler(GetTimeoutPolicy(timeout));
 
 builder.Services.AddHttpClient("YahooFinanceSearch", client =>
 {
     client.BaseAddress = new Uri("https://query2.finance.yahoo.com/v1/finance/search");
-    client.Timeout = TimeSpan.FromSeconds(10);
+    client.Timeout = timeout;
 })
-.AddPolicyHandler(GetRetryPolicy())
+.AddPolicyHandler(GetRetryPolicy(yahooFinanceSettings.MaxRetries))
 .AddPolicyHandler(GetCircuitBreakerPolicy())
-.AddPolicyHandler(GetTimeoutPolicy());
+.AddPolicyHandler(GetTimeoutPolicy(timeout));
 
 // Register YahooFinanceService
 builder.Services.AddScoped<IYahooFinanceService, YahooFinanceService>();
@@ -91,13 +111,13 @@ builder.Services.AddScoped<IYahooFinanceService, YahooFinanceService>();
 builder.Services.AddScoped<IStockDataProvider>(sp => sp.GetRequiredService<IYahooFinanceService>());
 
 // Polly policy definitions
-static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy(int maxRetries)
 {
     return HttpPolicyExtensions
         .HandleTransientHttpError()
         .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         .WaitAndRetryAsync(
-            retryCount: 3,
+            retryCount: maxRetries,
             sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
             onRetry: (outcome, timespan, retryCount, context) =>
             {
@@ -142,9 +162,9 @@ static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
             });
 }
 
-static IAsyncPolicy<HttpResponseMessage> GetTimeoutPolicy()
+static IAsyncPolicy<HttpResponseMessage> GetTimeoutPolicy(TimeSpan timeout)
 {
-    return Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(10));
+    return Policy.TimeoutAsync<HttpResponseMessage>(timeout);
 }
 
 // Add CORS
@@ -215,6 +235,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+
+// Add rate limiting middleware
+app.UseMiddleware<RateLimitMiddleware>();
+
 app.UseAuthorization();
 app.MapControllers();
 

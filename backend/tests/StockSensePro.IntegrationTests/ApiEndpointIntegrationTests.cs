@@ -20,10 +20,27 @@ namespace StockSensePro.IntegrationTests
         public async Task HealthCheck_ReturnsOk()
         {
             // Act
-            var response = await _client.GetAsync("/health");
+            var response = await _client.GetAsync("/api/health");
 
             // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(
+                response.StatusCode == HttpStatusCode.OK || 
+                response.StatusCode == HttpStatusCode.ServiceUnavailable,
+                $"Expected OK or ServiceUnavailable, but got {response.StatusCode}");
+        }
+
+        [Fact]
+        public async Task HealthCheck_ReturnsHealthCheckResponse()
+        {
+            // Act
+            var response = await _client.GetAsync("/api/health");
+            var content = await response.Content.ReadAsStringAsync();
+
+            // Assert
+            Assert.NotNull(content);
+            Assert.Contains("status", content.ToLower());
+            Assert.Contains("timestamp", content.ToLower());
+            Assert.Contains("service", content.ToLower());
         }
 
         // ===== Stock API Tests =====

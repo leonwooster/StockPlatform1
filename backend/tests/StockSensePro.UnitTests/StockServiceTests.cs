@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using StockSensePro.Core.Entities;
 using StockSensePro.Core.Interfaces;
+using StockSensePro.Core.Configuration;
 using StockSensePro.Application.Services;
 using Xunit;
 
@@ -13,6 +14,7 @@ namespace StockSensePro.UnitTests
         private readonly Mock<IStockDataProvider> _mockDataProvider;
         private readonly Mock<ICacheService> _mockCacheService;
         private readonly Mock<ILogger<StockService>> _mockLogger;
+        private readonly CacheSettings _cacheSettings;
         private readonly StockService _stockService;
 
         public StockServiceTests()
@@ -21,10 +23,19 @@ namespace StockSensePro.UnitTests
             _mockDataProvider = new Mock<IStockDataProvider>();
             _mockCacheService = new Mock<ICacheService>();
             _mockLogger = new Mock<ILogger<StockService>>();
+            _cacheSettings = new CacheSettings
+            {
+                QuoteTTL = 900,
+                HistoricalTTL = 86400,
+                FundamentalsTTL = 21600,
+                ProfileTTL = 604800,
+                SearchTTL = 3600
+            };
             _stockService = new StockService(
                 _mockRepository.Object,
                 _mockDataProvider.Object,
                 _mockCacheService.Object,
+                _cacheSettings,
                 _mockLogger.Object);
         }
 

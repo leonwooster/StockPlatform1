@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using StockSensePro.Core.Entities;
 using StockSensePro.Core.Enums;
 using StockSensePro.Core.Interfaces;
+using StockSensePro.Core.Configuration;
 
 namespace StockSensePro.Application.Services
 {
@@ -10,24 +11,20 @@ namespace StockSensePro.Application.Services
         private readonly IStockRepository _stockRepository;
         private readonly IStockDataProvider _stockDataProvider;
         private readonly ICacheService _cacheService;
+        private readonly CacheSettings _cacheSettings;
         private readonly ILogger<StockService> _logger;
-
-        // Cache TTL constants (in seconds)
-        private const int QuoteTTL = 900;           // 15 minutes
-        private const int HistoricalTTL = 86400;    // 24 hours
-        private const int FundamentalsTTL = 21600;  // 6 hours
-        private const int ProfileTTL = 604800;      // 7 days
-        private const int SearchTTL = 3600;         // 1 hour
 
         public StockService(
             IStockRepository stockRepository,
             IStockDataProvider stockDataProvider,
             ICacheService cacheService,
+            CacheSettings cacheSettings,
             ILogger<StockService> logger)
         {
             _stockRepository = stockRepository;
             _stockDataProvider = stockDataProvider;
             _cacheService = cacheService;
+            _cacheSettings = cacheSettings;
             _logger = logger;
         }
 
@@ -79,39 +76,58 @@ namespace StockSensePro.Application.Services
                 var cachedData = await _cacheService.GetAsync<MarketData>(cacheKey);
                 if (cachedData != null)
                 {
-                    _logger.LogInformation("Cache HIT for quote {Symbol}", symbol);
+                    _logger.LogInformation(
+                        "Service Cache HIT: DataType=Quote, Symbol={Symbol}, CacheKey={CacheKey}",
+                        symbol,
+                        cacheKey);
                     return cachedData;
                 }
 
-                _logger.LogInformation("Cache MISS for quote {Symbol}. Fetching from API", symbol);
+                _logger.LogInformation(
+                    "Service Cache MISS: DataType=Quote, Symbol={Symbol}, CacheKey={CacheKey}, Action=FetchingFromAPI",
+                    symbol,
+                    cacheKey);
 
                 // Fetch from API
                 var marketData = await _stockDataProvider.GetQuoteAsync(symbol, cancellationToken);
 
                 // Store in cache with normal TTL
-                await _cacheService.SetAsync(cacheKey, marketData, TimeSpan.FromSeconds(QuoteTTL));
+                await _cacheService.SetAsync(cacheKey, marketData, TimeSpan.FromSeconds(_cacheSettings.QuoteTTL));
                 
                 // Store in stale cache with longer TTL for fallback (24 hours)
                 await _cacheService.SetAsync(staleCacheKey, marketData, TimeSpan.FromHours(24));
 
-                _logger.LogInformation("Cached quote for {Symbol} with TTL {TTL}s", symbol, QuoteTTL);
+                _logger.LogInformation(
+                    "Service Cached: DataType=Quote, Symbol={Symbol}, CacheKey={CacheKey}, TTL={TTLSeconds}s, StaleTTL={StaleTTLHours}h",
+                    symbol,
+                    cacheKey,
+                    _cacheSettings.QuoteTTL,
+                    24);
 
                 return marketData;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching quote for {Symbol}. Attempting fallback to stale cache", symbol);
+                _logger.LogError(ex,
+                    "Service Error: DataType=Quote, Symbol={Symbol}, ErrorType={ErrorType}, Action=AttemptingFallback",
+                    symbol,
+                    ex.GetType().Name);
                 
                 // Try to get stale cached data as fallback
                 var staleData = await _cacheService.GetAsync<MarketData>(staleCacheKey);
                 if (staleData != null)
                 {
-                    _logger.LogWarning("Serving STALE cached data for quote {Symbol} due to API failure", symbol);
+                    _logger.LogWarning(
+                        "Service Fallback: DataType=Quote, Symbol={Symbol}, CacheKey={CacheKey}, Status=ServingStaleData",
+                        symbol,
+                        staleCacheKey);
                     return staleData;
                 }
 
                 // No fallback available, rethrow
-                _logger.LogError("No cached data available for {Symbol}. Unable to serve request", symbol);
+                _logger.LogError(
+                    "Service Failure: DataType=Quote, Symbol={Symbol}, Status=NoFallbackAvailable",
+                    symbol);
                 throw;
             }
         }
@@ -140,40 +156,66 @@ namespace StockSensePro.Application.Services
                 var cachedData = await _cacheService.GetAsync<List<StockPrice>>(cacheKey);
                 if (cachedData != null)
                 {
-                    _logger.LogInformation("Cache HIT for historical prices {Symbol} ({Start} to {End})", symbol, startStr, endStr);
+                    _logger.LogInformation(
+                        "Service Cache HIT: DataType=HistoricalPrices, Symbol={Symbol}, DateRange={StartDate} to {EndDate}, Interval={Interval}, CacheKey={CacheKey}",
+                        symbol,
+                        startStr,
+                        endStr,
+                        interval,
+                        cacheKey);
                     return cachedData;
                 }
 
-                _logger.LogInformation("Cache MISS for historical prices {Symbol}. Fetching from API", symbol);
+                _logger.LogInformation(
+                    "Service Cache MISS: DataType=HistoricalPrices, Symbol={Symbol}, DateRange={StartDate} to {EndDate}, Interval={Interval}, CacheKey={CacheKey}, Action=FetchingFromAPI",
+                    symbol,
+                    startStr,
+                    endStr,
+                    interval,
+                    cacheKey);
 
                 // Fetch from API
                 var historicalPrices = await _stockDataProvider.GetHistoricalPricesAsync(
                     symbol, startDate, endDate, interval, cancellationToken);
 
                 // Store in cache with normal TTL
-                await _cacheService.SetAsync(cacheKey, historicalPrices, TimeSpan.FromSeconds(HistoricalTTL));
+                await _cacheService.SetAsync(cacheKey, historicalPrices, TimeSpan.FromSeconds(_cacheSettings.HistoricalTTL));
                 
                 // Store in stale cache with longer TTL for fallback (7 days)
                 await _cacheService.SetAsync(staleCacheKey, historicalPrices, TimeSpan.FromDays(7));
 
-                _logger.LogInformation("Cached historical prices for {Symbol} with TTL {TTL}s", symbol, HistoricalTTL);
+                _logger.LogInformation(
+                    "Service Cached: DataType=HistoricalPrices, Symbol={Symbol}, RecordCount={Count}, CacheKey={CacheKey}, TTL={TTLSeconds}s, StaleTTL={StaleTTLDays}d",
+                    symbol,
+                    historicalPrices.Count,
+                    cacheKey,
+                    _cacheSettings.HistoricalTTL,
+                    7);
 
                 return historicalPrices;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching historical prices for {Symbol}. Attempting fallback to stale cache", symbol);
+                _logger.LogError(ex,
+                    "Service Error: DataType=HistoricalPrices, Symbol={Symbol}, ErrorType={ErrorType}, Action=AttemptingFallback",
+                    symbol,
+                    ex.GetType().Name);
                 
                 // Try to get stale cached data as fallback
                 var staleData = await _cacheService.GetAsync<List<StockPrice>>(staleCacheKey);
                 if (staleData != null)
                 {
-                    _logger.LogWarning("Serving STALE cached data for historical prices {Symbol} due to API failure", symbol);
+                    _logger.LogWarning(
+                        "Service Fallback: DataType=HistoricalPrices, Symbol={Symbol}, CacheKey={CacheKey}, Status=ServingStaleData",
+                        symbol,
+                        staleCacheKey);
                     return staleData;
                 }
 
                 // No fallback available, rethrow
-                _logger.LogError("No cached data available for historical prices {Symbol}. Unable to serve request", symbol);
+                _logger.LogError(
+                    "Service Failure: DataType=HistoricalPrices, Symbol={Symbol}, Status=NoFallbackAvailable",
+                    symbol);
                 throw;
             }
         }
@@ -195,39 +237,58 @@ namespace StockSensePro.Application.Services
                 var cachedData = await _cacheService.GetAsync<FundamentalData>(cacheKey);
                 if (cachedData != null)
                 {
-                    _logger.LogInformation("Cache HIT for fundamentals {Symbol}", symbol);
+                    _logger.LogInformation(
+                        "Service Cache HIT: DataType=Fundamentals, Symbol={Symbol}, CacheKey={CacheKey}",
+                        symbol,
+                        cacheKey);
                     return cachedData;
                 }
 
-                _logger.LogInformation("Cache MISS for fundamentals {Symbol}. Fetching from API", symbol);
+                _logger.LogInformation(
+                    "Service Cache MISS: DataType=Fundamentals, Symbol={Symbol}, CacheKey={CacheKey}, Action=FetchingFromAPI",
+                    symbol,
+                    cacheKey);
 
                 // Fetch from API
                 var fundamentalData = await _stockDataProvider.GetFundamentalsAsync(symbol, cancellationToken);
 
                 // Store in cache with normal TTL
-                await _cacheService.SetAsync(cacheKey, fundamentalData, TimeSpan.FromSeconds(FundamentalsTTL));
+                await _cacheService.SetAsync(cacheKey, fundamentalData, TimeSpan.FromSeconds(_cacheSettings.FundamentalsTTL));
                 
                 // Store in stale cache with longer TTL for fallback (7 days)
                 await _cacheService.SetAsync(staleCacheKey, fundamentalData, TimeSpan.FromDays(7));
 
-                _logger.LogInformation("Cached fundamentals for {Symbol} with TTL {TTL}s", symbol, FundamentalsTTL);
+                _logger.LogInformation(
+                    "Service Cached: DataType=Fundamentals, Symbol={Symbol}, CacheKey={CacheKey}, TTL={TTLSeconds}s, StaleTTL={StaleTTLDays}d",
+                    symbol,
+                    cacheKey,
+                    _cacheSettings.FundamentalsTTL,
+                    7);
 
                 return fundamentalData;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching fundamentals for {Symbol}. Attempting fallback to stale cache", symbol);
+                _logger.LogError(ex,
+                    "Service Error: DataType=Fundamentals, Symbol={Symbol}, ErrorType={ErrorType}, Action=AttemptingFallback",
+                    symbol,
+                    ex.GetType().Name);
                 
                 // Try to get stale cached data as fallback
                 var staleData = await _cacheService.GetAsync<FundamentalData>(staleCacheKey);
                 if (staleData != null)
                 {
-                    _logger.LogWarning("Serving STALE cached data for fundamentals {Symbol} due to API failure", symbol);
+                    _logger.LogWarning(
+                        "Service Fallback: DataType=Fundamentals, Symbol={Symbol}, CacheKey={CacheKey}, Status=ServingStaleData",
+                        symbol,
+                        staleCacheKey);
                     return staleData;
                 }
 
                 // No fallback available, rethrow
-                _logger.LogError("No cached data available for fundamentals {Symbol}. Unable to serve request", symbol);
+                _logger.LogError(
+                    "Service Failure: DataType=Fundamentals, Symbol={Symbol}, Status=NoFallbackAvailable",
+                    symbol);
                 throw;
             }
         }
@@ -249,39 +310,58 @@ namespace StockSensePro.Application.Services
                 var cachedData = await _cacheService.GetAsync<CompanyProfile>(cacheKey);
                 if (cachedData != null)
                 {
-                    _logger.LogInformation("Cache HIT for company profile {Symbol}", symbol);
+                    _logger.LogInformation(
+                        "Service Cache HIT: DataType=CompanyProfile, Symbol={Symbol}, CacheKey={CacheKey}",
+                        symbol,
+                        cacheKey);
                     return cachedData;
                 }
 
-                _logger.LogInformation("Cache MISS for company profile {Symbol}. Fetching from API", symbol);
+                _logger.LogInformation(
+                    "Service Cache MISS: DataType=CompanyProfile, Symbol={Symbol}, CacheKey={CacheKey}, Action=FetchingFromAPI",
+                    symbol,
+                    cacheKey);
 
                 // Fetch from API
                 var companyProfile = await _stockDataProvider.GetCompanyProfileAsync(symbol, cancellationToken);
 
                 // Store in cache with normal TTL
-                await _cacheService.SetAsync(cacheKey, companyProfile, TimeSpan.FromSeconds(ProfileTTL));
+                await _cacheService.SetAsync(cacheKey, companyProfile, TimeSpan.FromSeconds(_cacheSettings.ProfileTTL));
                 
                 // Store in stale cache with longer TTL for fallback (30 days)
                 await _cacheService.SetAsync(staleCacheKey, companyProfile, TimeSpan.FromDays(30));
 
-                _logger.LogInformation("Cached company profile for {Symbol} with TTL {TTL}s", symbol, ProfileTTL);
+                _logger.LogInformation(
+                    "Service Cached: DataType=CompanyProfile, Symbol={Symbol}, CacheKey={CacheKey}, TTL={TTLSeconds}s, StaleTTL={StaleTTLDays}d",
+                    symbol,
+                    cacheKey,
+                    _cacheSettings.ProfileTTL,
+                    30);
 
                 return companyProfile;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching company profile for {Symbol}. Attempting fallback to stale cache", symbol);
+                _logger.LogError(ex,
+                    "Service Error: DataType=CompanyProfile, Symbol={Symbol}, ErrorType={ErrorType}, Action=AttemptingFallback",
+                    symbol,
+                    ex.GetType().Name);
                 
                 // Try to get stale cached data as fallback
                 var staleData = await _cacheService.GetAsync<CompanyProfile>(staleCacheKey);
                 if (staleData != null)
                 {
-                    _logger.LogWarning("Serving STALE cached data for company profile {Symbol} due to API failure", symbol);
+                    _logger.LogWarning(
+                        "Service Fallback: DataType=CompanyProfile, Symbol={Symbol}, CacheKey={CacheKey}, Status=ServingStaleData",
+                        symbol,
+                        staleCacheKey);
                     return staleData;
                 }
 
                 // No fallback available, rethrow
-                _logger.LogError("No cached data available for company profile {Symbol}. Unable to serve request", symbol);
+                _logger.LogError(
+                    "Service Failure: DataType=CompanyProfile, Symbol={Symbol}, Status=NoFallbackAvailable",
+                    symbol);
                 throw;
             }
         }
@@ -306,39 +386,59 @@ namespace StockSensePro.Application.Services
                 var cachedData = await _cacheService.GetAsync<List<StockSearchResult>>(cacheKey);
                 if (cachedData != null)
                 {
-                    _logger.LogInformation("Cache HIT for search query '{Query}'", query);
+                    _logger.LogInformation(
+                        "Service Cache HIT: DataType=Search, Query={Query}, CacheKey={CacheKey}",
+                        query,
+                        cacheKey);
                     return cachedData;
                 }
 
-                _logger.LogInformation("Cache MISS for search query '{Query}'. Fetching from API", query);
+                _logger.LogInformation(
+                    "Service Cache MISS: DataType=Search, Query={Query}, CacheKey={CacheKey}, Action=FetchingFromAPI",
+                    query,
+                    cacheKey);
 
                 // Fetch from API
                 var searchResults = await _stockDataProvider.SearchSymbolsAsync(query, limit, cancellationToken);
 
                 // Store in cache with normal TTL
-                await _cacheService.SetAsync(cacheKey, searchResults, TimeSpan.FromSeconds(SearchTTL));
+                await _cacheService.SetAsync(cacheKey, searchResults, TimeSpan.FromSeconds(_cacheSettings.SearchTTL));
                 
                 // Store in stale cache with longer TTL for fallback (7 days)
                 await _cacheService.SetAsync(staleCacheKey, searchResults, TimeSpan.FromDays(7));
 
-                _logger.LogInformation("Cached search results for '{Query}' with TTL {TTL}s", query, SearchTTL);
+                _logger.LogInformation(
+                    "Service Cached: DataType=Search, Query={Query}, ResultCount={Count}, CacheKey={CacheKey}, TTL={TTLSeconds}s, StaleTTL={StaleTTLDays}d",
+                    query,
+                    searchResults.Count,
+                    cacheKey,
+                    _cacheSettings.SearchTTL,
+                    7);
 
                 return searchResults;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error searching for '{Query}'. Attempting fallback to stale cache", query);
+                _logger.LogError(ex,
+                    "Service Error: DataType=Search, Query={Query}, ErrorType={ErrorType}, Action=AttemptingFallback",
+                    query,
+                    ex.GetType().Name);
                 
                 // Try to get stale cached data as fallback
                 var staleData = await _cacheService.GetAsync<List<StockSearchResult>>(staleCacheKey);
                 if (staleData != null)
                 {
-                    _logger.LogWarning("Serving STALE cached data for search query '{Query}' due to API failure", query);
+                    _logger.LogWarning(
+                        "Service Fallback: DataType=Search, Query={Query}, CacheKey={CacheKey}, Status=ServingStaleData",
+                        query,
+                        staleCacheKey);
                     return staleData;
                 }
 
                 // No fallback available, rethrow
-                _logger.LogError("No cached data available for search query '{Query}'. Unable to serve request", query);
+                _logger.LogError(
+                    "Service Failure: DataType=Search, Query={Query}, Status=NoFallbackAvailable",
+                    query);
                 throw;
             }
         }
@@ -349,7 +449,16 @@ namespace StockSensePro.Application.Services
         /// </summary>
         public async Task WarmCacheAsync(List<string> symbols, CancellationToken cancellationToken = default)
         {
-            _logger.LogInformation("Starting cache warming for {Count} symbols", symbols.Count);
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            _logger.LogInformation(
+                "Cache Warming Started: SymbolCount={Count}, Timestamp={Timestamp}",
+                symbols.Count,
+                startTime);
+
+            var successCount = 0;
+            var failureCount = 0;
 
             var tasks = symbols.Select(async symbol =>
             {
@@ -361,17 +470,32 @@ namespace StockSensePro.Application.Services
                     // Warm company profile cache (changes infrequently)
                     await GetCompanyProfileAsync(symbol, cancellationToken);
                     
-                    _logger.LogInformation("Successfully warmed cache for {Symbol}", symbol);
+                    System.Threading.Interlocked.Increment(ref successCount);
+                    
+                    _logger.LogInformation(
+                        "Cache Warming Success: Symbol={Symbol}",
+                        symbol);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to warm cache for {Symbol}", symbol);
+                    System.Threading.Interlocked.Increment(ref failureCount);
+                    
+                    _logger.LogWarning(ex,
+                        "Cache Warming Failed: Symbol={Symbol}, ErrorType={ErrorType}",
+                        symbol,
+                        ex.GetType().Name);
                 }
             });
 
             await Task.WhenAll(tasks);
+            stopwatch.Stop();
             
-            _logger.LogInformation("Cache warming completed for {Count} symbols", symbols.Count);
+            _logger.LogInformation(
+                "Cache Warming Completed: TotalSymbols={Total}, SuccessCount={Success}, FailureCount={Failure}, Duration={DurationMs}ms",
+                symbols.Count,
+                successCount,
+                failureCount,
+                stopwatch.ElapsedMilliseconds);
         }
     }
 }

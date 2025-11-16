@@ -1,4 +1,5 @@
 using Moq;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using StockSensePro.Infrastructure.Services;
 using Xunit;
@@ -9,16 +10,18 @@ namespace StockSensePro.UnitTests
     {
         private readonly Mock<IDatabase> _mockDatabase;
         private readonly Mock<IConnectionMultiplexer> _mockRedis;
+        private readonly Mock<ILogger<RedisCacheService>> _mockLogger;
         private readonly RedisCacheService _cacheService;
 
         public RedisCacheServiceTests()
         {
             _mockDatabase = new Mock<IDatabase>();
             _mockRedis = new Mock<IConnectionMultiplexer>();
+            _mockLogger = new Mock<ILogger<RedisCacheService>>();
             _mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
                 .Returns(_mockDatabase.Object);
             
-            _cacheService = new RedisCacheService(_mockRedis.Object);
+            _cacheService = new RedisCacheService(_mockRedis.Object, _mockLogger.Object);
         }
 
         // ===== GetAsync Tests =====

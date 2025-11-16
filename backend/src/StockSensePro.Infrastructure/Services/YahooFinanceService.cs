@@ -26,6 +26,55 @@ namespace StockSensePro.Infrastructure.Services
             _logger = logger;
         }
 
+        /// <summary>
+        /// Helper method to log API requests with timing
+        /// </summary>
+        private async Task<HttpResponseMessage> ExecuteRequestWithLoggingAsync(
+            HttpClient httpClient,
+            string endpoint,
+            string symbol,
+            Func<Task<HttpResponseMessage>> requestFunc,
+            CancellationToken cancellationToken = default)
+        {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            try
+            {
+                _logger.LogInformation(
+                    "API Request: Endpoint={Endpoint}, Symbol={Symbol}, Timestamp={Timestamp}, BaseUrl={BaseUrl}",
+                    endpoint,
+                    symbol,
+                    startTime,
+                    httpClient.BaseAddress);
+
+                var response = await requestFunc();
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint={Endpoint}, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms, Timestamp={Timestamp}",
+                    endpoint,
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds,
+                    DateTime.UtcNow);
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint={Endpoint}, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, Timestamp={Timestamp}",
+                    endpoint,
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    DateTime.UtcNow);
+                throw;
+            }
+        }
+
         private HttpClient GetChartClient() => _httpClientFactory.CreateClient("YahooFinanceChart");
         private HttpClient GetQuoteClient() => _httpClientFactory.CreateClient("YahooFinanceQuote");
         private HttpClient GetSummaryClient() => _httpClientFactory.CreateClient("YahooFinanceSummary");
@@ -33,10 +82,26 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<Stock?> GetStockAsync(string symbol, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetStock, Symbol={Symbol}, Timestamp={Timestamp}",
+                    symbol,
+                    startTime);
+
                 var httpClient = GetChartClient();
                 var response = await httpClient.GetAsync($"{symbol}", cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetStock, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
+
                 response.EnsureSuccessStatusCode();
 
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -75,7 +140,13 @@ namespace StockSensePro.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching stock data for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetStock, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 return null;
             }
         }
@@ -89,17 +160,57 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
+                // Validate that startDate is before endDate
                 if (startDate >= endDate)
                 {
-                    throw new ArgumentException("Start date must be earlier than end date.");
+                    var message = $"Start date ({startDate:yyyy-MM-dd}) must be earlier than end date ({endDate:yyyy-MM-dd})";
+                    _logger.LogWarning(
+                        "Invalid date range for {Symbol}: StartDate={StartDate}, EndDate={EndDate}",
+                        symbol,
+                        startDate,
+                        endDate);
+                    throw new InvalidDateRangeException(message, symbol);
                 }
+
+                // Validate that date range doesn't exceed 5 years
+                var maxDateRange = TimeSpan.FromDays(365 * 5); // 5 years
+                var requestedRange = endDate - startDate;
+                if (requestedRange > maxDateRange)
+                {
+                    var message = $"Date range exceeds maximum allowed period of 5 years. Requested: {requestedRange.Days} days ({startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd})";
+                    _logger.LogWarning(
+                        "Date range too large for {Symbol}: StartDate={StartDate}, EndDate={EndDate}, Days={Days}",
+                        symbol,
+                        startDate,
+                        endDate,
+                        requestedRange.Days);
+                    throw new InvalidDateRangeException(message, symbol);
+                }
+
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetHistoricalPrices, Symbol={Symbol}, StartDate={StartDate}, EndDate={EndDate}, Timestamp={Timestamp}",
+                    symbol,
+                    startDate,
+                    endDate,
+                    startTime);
 
                 var httpClient = GetChartClient();
                 var response = await httpClient.GetAsync(
                     $"{symbol}?period1={ToUnixTimestamp(startDate)}&period2={ToUnixTimestamp(endDate)}&interval=1d",
                     cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetHistoricalPrices, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
+
                 response.EnsureSuccessStatusCode();
 
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -137,11 +248,24 @@ namespace StockSensePro.Infrastructure.Services
                     }
                 }
 
+                _logger.LogInformation(
+                    "Successfully fetched {Count} historical prices for {Symbol}",
+                    prices.Count,
+                    symbol);
+
                 return prices;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching historical prices for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetHistoricalPrices, Symbol={Symbol}, StartDate={StartDate}, EndDate={EndDate}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    startDate,
+                    endDate,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 return new List<StockPrice>();
             }
         }
@@ -156,29 +280,54 @@ namespace StockSensePro.Infrastructure.Services
         // IStockDataProvider implementation
         public async Task<MarketData> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
-                _logger.LogInformation("Fetching quote for symbol {Symbol}", symbol);
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetQuote, Symbol={Symbol}, Timestamp={Timestamp}",
+                    symbol,
+                    startTime);
 
                 // Use the quote endpoint which provides comprehensive market data
                 var httpClient = GetQuoteClient();
                 var response = await httpClient.GetAsync($"?symbols={symbol}", cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetQuote, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
                 
                 if (!response.IsSuccessStatusCode)
                 {
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
-                        _logger.LogWarning("Symbol {Symbol} not found", symbol);
+                        _logger.LogWarning(
+                            "API Error: Endpoint=GetQuote, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms, Error=SymbolNotFound",
+                            symbol,
+                            response.StatusCode,
+                            stopwatch.ElapsedMilliseconds);
                         throw new SymbolNotFoundException(symbol);
                     }
                     else if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                     {
-                        _logger.LogWarning("Rate limit exceeded for symbol {Symbol}", symbol);
+                        _logger.LogWarning(
+                            "API Error: Endpoint=GetQuote, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms, Error=RateLimitExceeded",
+                            symbol,
+                            response.StatusCode,
+                            stopwatch.ElapsedMilliseconds);
                         throw new RateLimitExceededException($"Rate limit exceeded while fetching quote for {symbol}", symbol);
                     }
                     else
                     {
-                        _logger.LogError("API returned status code {StatusCode} for symbol {Symbol}", response.StatusCode, symbol);
+                        _logger.LogError(
+                            "API Error: Endpoint=GetQuote, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms, Error=ApiUnavailable",
+                            symbol,
+                            response.StatusCode,
+                            stopwatch.ElapsedMilliseconds);
                         throw new ApiUnavailableException($"Yahoo Finance API returned status code {response.StatusCode}", symbol, 
                             new HttpRequestException($"Status code: {response.StatusCode}"));
                     }
@@ -230,8 +379,13 @@ namespace StockSensePro.Infrastructure.Services
                     MarketState = marketState
                 };
 
-                _logger.LogInformation("Successfully fetched quote for {Symbol}: Price={Price}, Change={Change}%", 
-                    symbol, marketData.CurrentPrice, marketData.ChangePercent);
+                _logger.LogInformation(
+                    "API Success: Endpoint=GetQuote, Symbol={Symbol}, Price={Price}, Change={ChangePercent}%, Volume={Volume}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    marketData.CurrentPrice,
+                    marketData.ChangePercent,
+                    marketData.Volume,
+                    stopwatch.ElapsedMilliseconds);
 
                 return marketData;
             }
@@ -249,22 +403,43 @@ namespace StockSensePro.Infrastructure.Services
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Network error fetching quote for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuote, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=NetworkError, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Network error while fetching quote for {symbol}", symbol, ex);
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timeout fetching quote for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuote, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=Timeout, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Request timeout while fetching quote for {symbol}", symbol, ex);
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to parse response for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuote, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=ParseError, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Failed to parse Yahoo Finance response for {symbol}", symbol, ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error fetching quote for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuote, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 throw new ApiUnavailableException($"Unexpected error while fetching quote for {symbol}", symbol, ex);
             }
         }
@@ -288,6 +463,9 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<List<MarketData>> GetQuotesAsync(List<string> symbols, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             if (symbols == null || symbols.Count == 0)
             {
                 _logger.LogWarning("GetQuotesAsync called with empty symbol list");
@@ -296,12 +474,23 @@ namespace StockSensePro.Infrastructure.Services
 
             try
             {
-                _logger.LogInformation("Fetching quotes for {Count} symbols", symbols.Count);
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetQuotes, SymbolCount={Count}, Symbols={Symbols}, Timestamp={Timestamp}",
+                    symbols.Count,
+                    string.Join(",", symbols),
+                    startTime);
 
                 // Yahoo Finance supports batch requests with comma-separated symbols
                 var symbolsParam = string.Join(",", symbols);
                 var httpClient = GetQuoteClient();
                 var response = await httpClient.GetAsync($"?symbols={symbolsParam}", cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetQuotes, SymbolCount={Count}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbols.Count,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -376,7 +565,11 @@ namespace StockSensePro.Infrastructure.Services
                     }
                 }
 
-                _logger.LogInformation("Successfully fetched {Count} quotes out of {Total} requested", quotes.Count, symbols.Count);
+                _logger.LogInformation(
+                    "API Success: Endpoint=GetQuotes, SuccessCount={SuccessCount}, RequestedCount={RequestedCount}, ResponseTime={ResponseTimeMs}ms",
+                    quotes.Count,
+                    symbols.Count,
+                    stopwatch.ElapsedMilliseconds);
 
                 return quotes;
             }
@@ -390,22 +583,43 @@ namespace StockSensePro.Infrastructure.Services
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Network error fetching batch quotes");
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuotes, SymbolCount={Count}, ResponseTime={ResponseTimeMs}ms, ErrorType=NetworkError, ErrorMessage={ErrorMessage}",
+                    symbols.Count,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException("Network error while fetching batch quotes", ex);
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timeout fetching batch quotes");
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuotes, SymbolCount={Count}, ResponseTime={ResponseTimeMs}ms, ErrorType=Timeout, ErrorMessage={ErrorMessage}",
+                    symbols.Count,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException("Request timeout while fetching batch quotes", ex);
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to parse batch quote response");
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuotes, SymbolCount={Count}, ResponseTime={ResponseTimeMs}ms, ErrorType=ParseError, ErrorMessage={ErrorMessage}",
+                    symbols.Count,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException("Failed to parse Yahoo Finance batch quote response", ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error fetching batch quotes");
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetQuotes, SymbolCount={Count}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbols.Count,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 throw new ApiUnavailableException("Unexpected error while fetching batch quotes", ex);
             }
         }
@@ -417,11 +631,36 @@ namespace StockSensePro.Infrastructure.Services
             TimeInterval interval = TimeInterval.Daily,
             CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
+                // Validate that startDate is before endDate
                 if (startDate >= endDate)
                 {
-                    throw new ArgumentException("Start date must be earlier than end date.");
+                    var message = $"Start date ({startDate:yyyy-MM-dd}) must be earlier than end date ({endDate:yyyy-MM-dd})";
+                    _logger.LogWarning(
+                        "Invalid date range for {Symbol}: StartDate={StartDate}, EndDate={EndDate}",
+                        symbol,
+                        startDate,
+                        endDate);
+                    throw new InvalidDateRangeException(message, symbol);
+                }
+
+                // Validate that date range doesn't exceed 5 years
+                var maxDateRange = TimeSpan.FromDays(365 * 5); // 5 years
+                var requestedRange = endDate - startDate;
+                if (requestedRange > maxDateRange)
+                {
+                    var message = $"Date range exceeds maximum allowed period of 5 years. Requested: {requestedRange.Days} days ({startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd})";
+                    _logger.LogWarning(
+                        "Date range too large for {Symbol}: StartDate={StartDate}, EndDate={EndDate}, Days={Days}",
+                        symbol,
+                        startDate,
+                        endDate,
+                        requestedRange.Days);
+                    throw new InvalidDateRangeException(message, symbol);
                 }
 
                 // Map TimeInterval enum to Yahoo Finance interval parameter
@@ -433,10 +672,26 @@ namespace StockSensePro.Infrastructure.Services
                     _ => "1d"
                 };
 
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetHistoricalPrices, Symbol={Symbol}, StartDate={StartDate}, EndDate={EndDate}, Interval={Interval}, Timestamp={Timestamp}",
+                    symbol,
+                    startDate,
+                    endDate,
+                    interval,
+                    startTime);
+
                 var httpClient = GetChartClient();
                 var response = await httpClient.GetAsync(
                     $"{symbol}?period1={ToUnixTimestamp(startDate)}&period2={ToUnixTimestamp(endDate)}&interval={intervalParam}",
                     cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetHistoricalPrices, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
+
                 response.EnsureSuccessStatusCode();
 
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -474,25 +729,54 @@ namespace StockSensePro.Infrastructure.Services
                     }
                 }
 
+                _logger.LogInformation(
+                    "API Success: Endpoint=GetHistoricalPrices, Symbol={Symbol}, PriceCount={Count}, Interval={Interval}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    prices.Count,
+                    interval,
+                    stopwatch.ElapsedMilliseconds);
+
                 return prices;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching historical prices for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetHistoricalPrices, Symbol={Symbol}, StartDate={StartDate}, EndDate={EndDate}, Interval={Interval}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    startDate,
+                    endDate,
+                    interval,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 throw;
             }
         }
 
         public async Task<FundamentalData> GetFundamentalsAsync(string symbol, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
-                _logger.LogInformation("Fetching fundamental data for symbol {Symbol}", symbol);
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetFundamentals, Symbol={Symbol}, Timestamp={Timestamp}",
+                    symbol,
+                    startTime);
 
                 // Yahoo Finance quoteSummary endpoint provides comprehensive fundamental data
                 var modules = "defaultKeyStatistics,financialData,summaryDetail";
                 var httpClient = GetSummaryClient();
                 var response = await httpClient.GetAsync($"{symbol}?modules={modules}", cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetFundamentals, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -564,7 +848,12 @@ namespace StockSensePro.Infrastructure.Services
                     LastUpdated = DateTime.UtcNow
                 };
 
-                _logger.LogInformation("Successfully fetched fundamental data for {Symbol}", symbol);
+                _logger.LogInformation(
+                    "API Success: Endpoint=GetFundamentals, Symbol={Symbol}, PERatio={PERatio}, EPS={EPS}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    fundamentalData.PERatio,
+                    fundamentalData.EPS,
+                    stopwatch.ElapsedMilliseconds);
 
                 return fundamentalData;
             }
@@ -582,22 +871,43 @@ namespace StockSensePro.Infrastructure.Services
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Network error fetching fundamental data for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetFundamentals, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=NetworkError, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Network error while fetching fundamentals for {symbol}", symbol, ex);
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timeout fetching fundamental data for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetFundamentals, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=Timeout, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Request timeout while fetching fundamentals for {symbol}", symbol, ex);
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to parse fundamental data response for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetFundamentals, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=ParseError, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Failed to parse Yahoo Finance fundamental data response for {symbol}", symbol, ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error fetching fundamental data for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetFundamentals, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 throw new ApiUnavailableException($"Unexpected error while fetching fundamentals for {symbol}", symbol, ex);
             }
         }
@@ -624,14 +934,27 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<CompanyProfile> GetCompanyProfileAsync(string symbol, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
-                _logger.LogInformation("Fetching company profile for symbol {Symbol}", symbol);
+                _logger.LogInformation(
+                    "API Request: Endpoint=GetCompanyProfile, Symbol={Symbol}, Timestamp={Timestamp}",
+                    symbol,
+                    startTime);
 
                 // Yahoo Finance quoteSummary endpoint with assetProfile and summaryProfile modules
                 var modules = "assetProfile,summaryProfile,price";
                 var httpClient = GetSummaryClient();
                 var response = await httpClient.GetAsync($"{symbol}?modules={modules}", cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=GetCompanyProfile, Symbol={Symbol}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -683,7 +1006,13 @@ namespace StockSensePro.Infrastructure.Services
                     Currency = price?.Currency ?? string.Empty
                 };
 
-                _logger.LogInformation("Successfully fetched company profile for {Symbol}: {CompanyName}", symbol, companyProfile.CompanyName);
+                _logger.LogInformation(
+                    "API Success: Endpoint=GetCompanyProfile, Symbol={Symbol}, CompanyName={CompanyName}, Sector={Sector}, Industry={Industry}, ResponseTime={ResponseTimeMs}ms",
+                    symbol,
+                    companyProfile.CompanyName,
+                    companyProfile.Sector,
+                    companyProfile.Industry,
+                    stopwatch.ElapsedMilliseconds);
 
                 return companyProfile;
             }
@@ -701,22 +1030,43 @@ namespace StockSensePro.Infrastructure.Services
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Network error fetching company profile for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetCompanyProfile, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=NetworkError, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Network error while fetching company profile for {symbol}", symbol, ex);
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timeout fetching company profile for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetCompanyProfile, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=Timeout, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Request timeout while fetching company profile for {symbol}", symbol, ex);
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to parse company profile response for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetCompanyProfile, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType=ParseError, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Failed to parse Yahoo Finance company profile response for {symbol}", symbol, ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error fetching company profile for symbol {Symbol}", symbol);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=GetCompanyProfile, Symbol={Symbol}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    symbol,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 throw new ApiUnavailableException($"Unexpected error while fetching company profile for {symbol}", symbol, ex);
             }
         }
@@ -747,6 +1097,9 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<List<StockSearchResult>> SearchSymbolsAsync(string query, int limit = 10, CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
                 if (string.IsNullOrWhiteSpace(query))
@@ -755,11 +1108,22 @@ namespace StockSensePro.Infrastructure.Services
                     return new List<StockSearchResult>();
                 }
 
-                _logger.LogInformation("Searching for symbols with query: {Query}, limit: {Limit}", query, limit);
+                _logger.LogInformation(
+                    "API Request: Endpoint=SearchSymbols, Query={Query}, Limit={Limit}, Timestamp={Timestamp}",
+                    query,
+                    limit,
+                    startTime);
 
                 // Yahoo Finance search/autocomplete endpoint
                 var httpClient = GetSearchClient();
                 var response = await httpClient.GetAsync($"?q={Uri.EscapeDataString(query)}&quotesCount={limit}&newsCount=0", cancellationToken);
+                stopwatch.Stop();
+
+                _logger.LogInformation(
+                    "API Response: Endpoint=SearchSymbols, Query={Query}, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms",
+                    query,
+                    response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -818,7 +1182,11 @@ namespace StockSensePro.Infrastructure.Services
                     .Take(limit)
                     .ToList();
 
-                _logger.LogInformation("Found {Count} search results for query {Query}", sortedResults.Count, query);
+                _logger.LogInformation(
+                    "API Success: Endpoint=SearchSymbols, Query={Query}, ResultCount={Count}, ResponseTime={ResponseTimeMs}ms",
+                    query,
+                    sortedResults.Count,
+                    stopwatch.ElapsedMilliseconds);
 
                 return sortedResults;
             }
@@ -832,22 +1200,43 @@ namespace StockSensePro.Infrastructure.Services
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Network error searching for query {Query}", query);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=SearchSymbols, Query={Query}, ResponseTime={ResponseTimeMs}ms, ErrorType=NetworkError, ErrorMessage={ErrorMessage}",
+                    query,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Network error while searching for {query}", ex);
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timeout searching for query {Query}", query);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=SearchSymbols, Query={Query}, ResponseTime={ResponseTimeMs}ms, ErrorType=Timeout, ErrorMessage={ErrorMessage}",
+                    query,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Request timeout while searching for {query}", ex);
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to parse search response for query {Query}", query);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=SearchSymbols, Query={Query}, ResponseTime={ResponseTimeMs}ms, ErrorType=ParseError, ErrorMessage={ErrorMessage}",
+                    query,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.Message);
                 throw new ApiUnavailableException($"Failed to parse Yahoo Finance search response for {query}", ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error searching for query {Query}", query);
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "API Request Failed: Endpoint=SearchSymbols, Query={Query}, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}",
+                    query,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message);
                 throw new ApiUnavailableException($"Unexpected error while searching for {query}", ex);
             }
         }
@@ -943,16 +1332,50 @@ namespace StockSensePro.Infrastructure.Services
 
         public async Task<bool> IsHealthyAsync(CancellationToken cancellationToken = default)
         {
+            var startTime = DateTime.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
-                // Test connectivity by fetching a well-known symbol
+                _logger.LogInformation(
+                    "Health Check: Testing Yahoo Finance API connectivity, Timestamp={Timestamp}",
+                    startTime);
+
+                // Test connectivity by fetching a well-known symbol (AAPL)
                 var httpClient = GetChartClient();
                 var response = await httpClient.GetAsync("AAPL", cancellationToken);
-                return response.IsSuccessStatusCode;
+                stopwatch.Stop();
+
+                var isHealthy = response.IsSuccessStatusCode;
+
+                if (isHealthy)
+                {
+                    _logger.LogInformation(
+                        "Health Check: Yahoo Finance API is healthy, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms, Timestamp={Timestamp}",
+                        response.StatusCode,
+                        stopwatch.ElapsedMilliseconds,
+                        DateTime.UtcNow);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Health Check: Yahoo Finance API returned unhealthy status, StatusCode={StatusCode}, ResponseTime={ResponseTimeMs}ms, Timestamp={Timestamp}",
+                        response.StatusCode,
+                        stopwatch.ElapsedMilliseconds,
+                        DateTime.UtcNow);
+                }
+
+                return isHealthy;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Health check failed for Yahoo Finance API");
+                stopwatch.Stop();
+                _logger.LogError(ex,
+                    "Health Check: Yahoo Finance API health check failed, ResponseTime={ResponseTimeMs}ms, ErrorType={ErrorType}, ErrorMessage={ErrorMessage}, Timestamp={Timestamp}",
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name,
+                    ex.Message,
+                    DateTime.UtcNow);
                 return false;
             }
         }
