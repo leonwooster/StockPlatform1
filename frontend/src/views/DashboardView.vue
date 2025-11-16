@@ -1,5 +1,37 @@
 <template>
   <div class="space-y-10">
+    <!-- Info notification for partial data -->
+    <div v-if="!loading && Object.keys(quotes).length > 0 && Object.keys(quotes).length < 11" class="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-300">
+      <div class="flex items-center gap-2">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>Showing available market data. Some quotes may be delayed or unavailable due to API rate limits.</span>
+      </div>
+    </div>
+
+    <!-- Error notification -->
+    <div v-if="error" class="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">
+      <div class="flex items-center gap-2">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span class="font-medium">Error loading market data:</span>
+        <span>{{ error }}</span>
+      </div>
+    </div>
+
+    <!-- Health status indicator (only show if critical) -->
+    <div v-if="healthStatus && healthStatus.status !== 'Healthy' && false" class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-300">
+      <div class="flex items-center gap-2">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span class="font-medium">API Status:</span>
+        <span>{{ healthStatus.details }}</span>
+      </div>
+    </div>
+
     <section class="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-8 shadow-[0_40px_120px_-60px_rgba(56,189,248,0.45)]">
       <div class="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
         <div class="space-y-4">
@@ -20,19 +52,29 @@
           </div>
         </div>
         <div class="grid w-full max-w-sm gap-4">
-          <div class="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm">
+          <div v-if="loading && !spxQuote" class="flex items-center justify-center rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
+            <span class="text-xs text-slate-400">Loading...</span>
+          </div>
+          <div v-else class="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm">
             <div class="text-slate-300">
               <p class="text-xs uppercase tracking-wide text-slate-400">S&P 500</p>
-              <p class="text-lg font-semibold text-white">4,938.12</p>
+              <p class="text-lg font-semibold text-white">{{ spxQuote ? formatPrice(spxQuote.currentPrice) : 'N/A' }}</p>
             </div>
-            <span class="rounded-full bg-emerald-500/15 px-3 py-1 text-emerald-300">+0.84%</span>
+            <span v-if="spxQuote" :class="['rounded-full px-3 py-1', getChangeClass(spxQuote.changePercent)]">
+              {{ formatPercent(spxQuote.changePercent) }}
+            </span>
           </div>
-          <div class="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm">
+          <div v-if="loading && !ndxQuote" class="flex items-center justify-center rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
+            <span class="text-xs text-slate-400">Loading...</span>
+          </div>
+          <div v-else class="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm">
             <div class="text-slate-300">
               <p class="text-xs uppercase tracking-wide text-slate-400">NASDAQ 100</p>
-              <p class="text-lg font-semibold text-white">15,245.67</p>
+              <p class="text-lg font-semibold text-white">{{ ndxQuote ? formatPrice(ndxQuote.currentPrice) : 'N/A' }}</p>
             </div>
-            <span class="rounded-full bg-emerald-500/15 px-3 py-1 text-emerald-300">+1.12%</span>
+            <span v-if="ndxQuote" :class="['rounded-full px-3 py-1', getChangeClass(ndxQuote.changePercent)]">
+              {{ formatPercent(ndxQuote.changePercent) }}
+            </span>
           </div>
         </div>
       </div>
@@ -54,64 +96,47 @@
 
         <article class="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-6 shadow-soft">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Gainers</p>
-          <ul class="mt-4 space-y-3 text-sm text-slate-200">
-            <li class="flex items-center justify-between">
-              <span class="font-medium">AAPL</span>
-              <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">+2.3%</span>
-            </li>
-            <li class="flex items-center justify-between">
-              <span class="font-medium">MSFT</span>
-              <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">+1.8%</span>
-            </li>
-            <li class="flex items-center justify-between">
-              <span class="font-medium">NVDA</span>
-              <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">+1.4%</span>
+          <ul v-if="gainers.length > 0" class="mt-4 space-y-3 text-sm text-slate-200">
+            <li v-for="stock in gainers" :key="stock.symbol" class="flex items-center justify-between">
+              <span class="font-medium">{{ stock.symbol }}</span>
+              <span :class="['rounded-full px-3 py-1', getChangeClass(stock.changePercent)]">
+                {{ formatPercent(stock.changePercent) }}
+              </span>
             </li>
           </ul>
+          <div v-else class="mt-4 text-sm text-slate-400">
+            {{ loading ? 'Loading...' : 'No gainers available' }}
+          </div>
         </article>
 
         <article class="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-6 shadow-soft">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Losers</p>
-          <ul class="mt-4 space-y-3 text-sm text-slate-200">
-            <li class="flex items-center justify-between">
-              <span class="font-medium">GOOGL</span>
-              <span class="rounded-full bg-rose-500/10 px-3 py-1 text-rose-300">-1.2%</span>
-            </li>
-            <li class="flex items-center justify-between">
-              <span class="font-medium">TSLA</span>
-              <span class="rounded-full bg-rose-500/10 px-3 py-1 text-rose-300">-0.9%</span>
-            </li>
-            <li class="flex items-center justify-between">
-              <span class="font-medium">AMZN</span>
-              <span class="rounded-full bg-rose-500/10 px-3 py-1 text-rose-300">-0.6%</span>
+          <ul v-if="losers.length > 0" class="mt-4 space-y-3 text-sm text-slate-200">
+            <li v-for="stock in losers" :key="stock.symbol" class="flex items-center justify-between">
+              <span class="font-medium">{{ stock.symbol }}</span>
+              <span :class="['rounded-full px-3 py-1', getChangeClass(stock.changePercent)]">
+                {{ formatPercent(stock.changePercent) }}
+              </span>
             </li>
           </ul>
+          <div v-else class="mt-4 text-sm text-slate-400">
+            {{ loading ? 'Loading...' : 'No losers available' }}
+          </div>
         </article>
 
         <article class="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-6 shadow-soft">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Watchlist</p>
-          <div class="mt-4 space-y-3 text-sm">
-            <div class="flex items-center justify-between text-slate-200">
+          <div v-if="watchlist.length > 0" class="mt-4 space-y-3 text-sm">
+            <div v-for="stock in watchlist" :key="stock.symbol" class="flex items-center justify-between text-slate-200">
               <div>
-                <p class="font-medium">NVDA</p>
-                <p class="text-xs text-slate-500">AI infrastructure</p>
+                <p class="font-medium">{{ stock.symbol }}</p>
+                <p class="text-xs text-slate-500">{{ stock.shortName || 'Technology' }}</p>
               </div>
-              <span class="text-slate-300">$425.60</span>
+              <span class="text-slate-300">{{ formatPrice(stock.currentPrice) }}</span>
             </div>
-            <div class="flex items-center justify-between text-slate-200">
-              <div>
-                <p class="font-medium">AMD</p>
-                <p class="text-xs text-slate-500">Data center</p>
-              </div>
-              <span class="text-slate-300">$115.30</span>
-            </div>
-            <div class="flex items-center justify-between text-slate-200">
-              <div>
-                <p class="font-medium">SMCI</p>
-                <p class="text-xs text-slate-500">HPC systems</p>
-              </div>
-              <span class="text-slate-300">$904.10</span>
-            </div>
+          </div>
+          <div v-else class="mt-4 text-sm text-slate-400">
+            {{ loading ? 'Loading...' : 'No watchlist items' }}
           </div>
         </article>
       </div>
@@ -239,11 +264,149 @@
         </div>
       </article>
     </section>
+
+    <!-- Rate Limit Metrics (for debugging/monitoring) -->
+    <section v-if="metrics" class="rounded-3xl border border-white/5 bg-slate-900/60 p-6 shadow-soft">
+      <div class="flex items-center justify-between border-b border-white/5 pb-4">
+        <div>
+          <h3 class="text-sm font-semibold text-white">API Rate Limit Status</h3>
+          <p class="text-xs text-slate-400">Real-time monitoring of Yahoo Finance API usage</p>
+        </div>
+        <button @click="fetchHealthData" class="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300 transition hover:border-primary-400 hover:text-primary-200">
+          Refresh
+        </button>
+      </div>
+      <div class="mt-4 grid gap-4 text-xs md:grid-cols-4">
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p class="text-slate-400">Total Requests</p>
+          <p class="mt-2 text-2xl font-semibold text-white">{{ metrics.totalRequests.toLocaleString() }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p class="text-slate-400">Rate Limit Hits</p>
+          <p class="mt-2 text-2xl font-semibold text-white">{{ metrics.totalRateLimitHits.toLocaleString() }}</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p class="text-slate-400">Hit Rate</p>
+          <p class="mt-2 text-2xl font-semibold text-white">{{ (metrics.rateLimitHitRate * 100).toFixed(2) }}%</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p class="text-slate-400">Uptime</p>
+          <p class="mt-2 text-lg font-semibold text-white">{{ formatUptime(metrics.uptime) }}</p>
+        </div>
+      </div>
+      <div v-if="Object.keys(metrics.requestsByEndpoint).length > 0" class="mt-4">
+        <p class="mb-2 text-xs uppercase tracking-wide text-slate-400">Requests by Endpoint</p>
+        <div class="grid gap-2 text-xs md:grid-cols-3">
+          <div v-for="(count, endpoint) in metrics.requestsByEndpoint" :key="endpoint" class="flex items-center justify-between rounded-lg border border-white/5 bg-white/5 px-3 py-2">
+            <span class="text-slate-300">{{ endpoint }}</span>
+            <span class="font-semibold text-white">{{ count.toLocaleString() }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
-<script>
-export default {
-  name: 'DashboardView'
+<script setup>
+import { ref, onMounted, computed } from 'vue'
+import { useMarketData } from '../composables/useMarketData'
+import { healthService } from '../services/api'
+
+const { quotes, loading, error, fetchMultipleQuotes, formatPrice, formatPercent } = useMarketData()
+
+// Market indices and watchlist symbols
+const indexSymbols = ['^GSPC', '^NDX'] // S&P 500, NASDAQ 100
+const topSymbols = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'TSLA', 'AMZN']
+const watchlistSymbols = ['NVDA', 'AMD', 'SMCI']
+
+const healthStatus = ref(null)
+const metrics = ref(null)
+const loadingHealth = ref(false)
+
+// Computed properties for market data
+const spxQuote = computed(() => quotes.value['^GSPC'])
+const ndxQuote = computed(() => quotes.value['^NDX'])
+
+const topStocks = computed(() => {
+  return topSymbols
+    .map(symbol => quotes.value[symbol])
+    .filter(q => q != null)
+    .sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0))
+})
+
+const gainers = computed(() => topStocks.value.filter(q => (q.changePercent || 0) > 0).slice(0, 3))
+const losers = computed(() => topStocks.value.filter(q => (q.changePercent || 0) < 0).slice(0, 3))
+
+const watchlist = computed(() => {
+  return watchlistSymbols
+    .map(symbol => quotes.value[symbol])
+    .filter(q => q != null)
+})
+
+const getChangeClass = (changePercent) => {
+  if (changePercent == null) return 'bg-white/5 text-slate-300'
+  return changePercent >= 0 
+    ? 'bg-emerald-500/10 text-emerald-300' 
+    : 'bg-rose-500/10 text-rose-300'
 }
+
+const formatUptime = (uptime) => {
+  if (!uptime) return 'N/A'
+  // uptime is in format "HH:MM:SS" or TimeSpan format
+  if (typeof uptime === 'string') {
+    return uptime
+  }
+  // If it's an object with hours, minutes, seconds
+  if (uptime.hours !== undefined) {
+    return `${uptime.hours}h ${uptime.minutes}m ${uptime.seconds}s`
+  }
+  return uptime.toString()
+}
+
+const fetchMarketData = async () => {
+  try {
+    const allSymbols = [...indexSymbols, ...topSymbols, ...watchlistSymbols]
+    await fetchMultipleQuotes(allSymbols)
+    
+    // Log successful fetches
+    const successCount = Object.keys(quotes.value).length
+    console.log(`Successfully fetched ${successCount} of ${allSymbols.length} quotes`)
+  } catch (err) {
+    console.error('Error fetching market data:', err)
+    // Don't set error state, show what data we have
+  }
+}
+
+const fetchHealthData = async () => {
+  loadingHealth.value = true
+  try {
+    const [health, metricsData] = await Promise.allSettled([
+      healthService.getHealth(),
+      healthService.getMetrics()
+    ])
+    
+    if (health.status === 'fulfilled') {
+      healthStatus.value = health.value
+    }
+    if (metricsData.status === 'fulfilled') {
+      metrics.value = metricsData.value
+    }
+  } catch (err) {
+    console.error('Error fetching health data:', err)
+    // Don't show error to user, health check is not critical
+  } finally {
+    loadingHealth.value = false
+  }
+}
+
+onMounted(() => {
+  fetchMarketData()
+  fetchHealthData()
+  
+  // Refresh market data every 60 seconds
+  const interval = setInterval(fetchMarketData, 60000)
+  
+  // Cleanup on unmount
+  return () => clearInterval(interval)
+})
 </script>

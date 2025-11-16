@@ -17,8 +17,23 @@ using StockSensePro.Infrastructure.Services;
 using StockSensePro.AI.Services;
 using StockSensePro.API.Filters;
 using StockSensePro.API.Middleware;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "logs/stocksensepro-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 30,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 // Bind configuration settings
 var yahooFinanceSettings = builder.Configuration
@@ -104,8 +119,18 @@ builder.Services.AddHttpClient("YahooFinanceSearch", client =>
 .AddPolicyHandler(GetCircuitBreakerPolicy())
 .AddPolicyHandler(GetTimeoutPolicy(timeout));
 
-// Register YahooFinanceService
-builder.Services.AddScoped<IYahooFinanceService, YahooFinanceService>();
+// Register YahooFinanceService (use mock in development if Yahoo Finance is not accessible)
+var useMockYahooFinance = builder.Configuration.GetValue<bool>("YahooFinance:UseMock", false);
+
+if (useMockYahooFinance)
+{
+    builder.Services.AddScoped<IYahooFinanceService, MockYahooFinanceService>();
+    Log.Warning("Using MockYahooFinanceService - no real API calls will be made");
+}
+else
+{
+    builder.Services.AddScoped<IYahooFinanceService, YahooFinanceService>();
+}
 
 // Register IStockDataProvider (using YahooFinanceService as the implementation)
 builder.Services.AddScoped<IStockDataProvider>(sp => sp.GetRequiredService<IYahooFinanceService>());
@@ -233,8 +258,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// CORS must come before other middleware
 app.UseCors("AllowAll");
+
+// HTTPS redirection (disabled in development to avoid issues)
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 // Add rate limiting middleware
 app.UseMiddleware<RateLimitMiddleware>();
@@ -242,26 +273,37 @@ app.UseMiddleware<RateLimitMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 
-await DatabaseInitializer.InitializeAsync(app.Services);
-
-app.Run();
+try
+{
+    Log.Information("Starting StockSensePro API");
+    await DatabaseInitializer.InitializeAsync(app.Services);
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 // Extension method for Polly context to get logger
 public static class PollyContextExtensions
 {
     private const string LoggerKey = "ILogger";
 
-    public static Context WithLogger(this Context context, ILogger logger)
+    public static Context WithLogger(this Context context, Microsoft.Extensions.Logging.ILogger logger)
     {
         context[LoggerKey] = logger;
         return context;
     }
 
-    public static ILogger? GetLogger(this Context context)
+    public static Microsoft.Extensions.Logging.ILogger? GetLogger(this Context context)
     {
         if (context.TryGetValue(LoggerKey, out var logger))
         {
-            return logger as ILogger;
+            return logger as Microsoft.Extensions.Logging.ILogger;
         }
         return null;
     }

@@ -1,4 +1,6 @@
-const API_BASE_URL = 'https://localhost:5565/api'
+// Use HTTP for local development to avoid certificate issues
+// Change to HTTPS in production
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
 
 export const stockService = {
   async getStocks() {
@@ -69,6 +71,83 @@ export const stockService = {
       throw new Error(`Failed to fetch daily equity curve for ${symbol}`)
     }
     return response.json()
+  },
+
+  async getQuote(symbol) {
+    const response = await fetch(`${API_BASE_URL}/stocks/${symbol}/quote`)
+    if (!response.ok) {
+      if (response.status === 429) {
+        const data = await response.json()
+        throw new Error(`Rate limit exceeded. ${data.message}`)
+      }
+      throw new Error(`Failed to fetch quote for ${symbol}`)
+    }
+    return response.json()
+  },
+
+  async getHistoricalPrices(symbol, opts = {}) {
+    const params = new URLSearchParams()
+    if (opts.startDate) params.append('startDate', opts.startDate)
+    if (opts.endDate) params.append('endDate', opts.endDate)
+    if (opts.interval) params.append('interval', opts.interval)
+    const qs = params.toString()
+    const url = qs
+      ? `${API_BASE_URL}/stocks/${symbol}/historical?${qs}`
+      : `${API_BASE_URL}/stocks/${symbol}/historical`
+    const response = await fetch(url)
+    if (!response.ok) {
+      if (response.status === 429) {
+        const data = await response.json()
+        throw new Error(`Rate limit exceeded. ${data.message}`)
+      }
+      throw new Error(`Failed to fetch historical prices for ${symbol}`)
+    }
+    return response.json()
+  },
+
+  async getFundamentals(symbol) {
+    const response = await fetch(`${API_BASE_URL}/stocks/${symbol}/fundamentals`)
+    if (!response.ok) {
+      if (response.status === 429) {
+        const data = await response.json()
+        throw new Error(`Rate limit exceeded. ${data.message}`)
+      }
+      throw new Error(`Failed to fetch fundamentals for ${symbol}`)
+    }
+    return response.json()
+  },
+
+  async getCompanyProfile(symbol) {
+    const response = await fetch(`${API_BASE_URL}/stocks/${symbol}/profile`)
+    if (!response.ok) {
+      if (response.status === 429) {
+        const data = await response.json()
+        throw new Error(`Rate limit exceeded. ${data.message}`)
+      }
+      throw new Error(`Failed to fetch company profile for ${symbol}`)
+    }
+    return response.json()
+  },
+
+  async searchSymbols(query, limit = 10) {
+    const params = new URLSearchParams({ query, limit: String(limit) })
+    const response = await fetch(`${API_BASE_URL}/stocks/search?${params.toString()}`)
+    if (!response.ok) {
+      if (response.status === 429) {
+        const data = await response.json()
+        throw new Error(`Rate limit exceeded. ${data.message}`)
+      }
+      throw new Error(`Failed to search symbols with query: ${query}`)
+    }
+    return response.json()
+  },
+
+  async getQuotes(symbols) {
+    const promises = symbols.map(symbol => this.getQuote(symbol))
+    const results = await Promise.allSettled(promises)
+    return results
+      .filter(result => result.status === 'fulfilled')
+      .map(result => result.value)
   }
 }
 
@@ -83,6 +162,24 @@ export const aiAgentService = {
     })
     if (!response.ok) {
       throw new Error(`Failed to analyze stock ${symbol}`)
+    }
+    return response.json()
+  }
+}
+
+export const healthService = {
+  async getHealth() {
+    const response = await fetch(`${API_BASE_URL}/health`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch health status')
+    }
+    return response.json()
+  },
+
+  async getMetrics() {
+    const response = await fetch(`${API_BASE_URL}/health/metrics`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch rate limit metrics')
     }
     return response.json()
   }

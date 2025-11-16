@@ -25,6 +25,11 @@ const routes = [
     path: '/ai-agents',
     name: 'AIAgents',
     component: () => import('../views/AIAgentsView.vue')
+  },
+  {
+    path: '/system-status',
+    name: 'SystemStatus',
+    component: () => import('../views/SystemStatusView.vue')
   }
 ]
 

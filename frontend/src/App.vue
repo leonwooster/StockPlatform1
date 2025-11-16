@@ -86,7 +86,8 @@ const links = [
   { label: 'Technical', to: '/technical' },
   { label: 'Screener', to: '/screener' },
   { label: 'News & Sentiment', to: '/news' },
-  { label: 'AI Agents', to: '/ai-agents' }
+  { label: 'AI Agents', to: '/ai-agents' },
+  { label: 'System Status', to: '/system-status' }
 ]
 
 const route = useRoute()
