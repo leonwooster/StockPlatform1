@@ -8,33 +8,38 @@ namespace StockSensePro.Infrastructure.Services
     /// <summary>
     /// Factory implementation for creating stock data provider instances.
     /// Uses dependency injection to resolve provider implementations.
+    /// Creates a scope to resolve scoped services when called from singleton contexts.
     /// </summary>
     public class StockDataProviderFactory : IStockDataProviderFactory
     {
-        private readonly IServiceProvider _serviceProvider;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<StockDataProviderFactory> _logger;
 
         public StockDataProviderFactory(
-            IServiceProvider serviceProvider,
+            IServiceScopeFactory scopeFactory,
             ILogger<StockDataProviderFactory> logger)
         {
-            _serviceProvider = serviceProvider;
+            _scopeFactory = scopeFactory;
             _logger = logger;
         }
 
         /// <summary>
-        /// Creates a stock data provider instance based on the specified provider type
+        /// Creates a stock data provider instance based on the specified provider type.
+        /// Creates a new scope to resolve scoped services safely from singleton context.
         /// </summary>
         public IStockDataProvider CreateProvider(DataProviderType providerType)
         {
             _logger.LogDebug("Creating provider for type: {ProviderType}", providerType);
 
+            // Create a scope to resolve scoped services
+            var scope = _scopeFactory.CreateScope();
+            var serviceProvider = scope.ServiceProvider;
+
             return providerType switch
             {
-                DataProviderType.YahooFinance => _serviceProvider.GetRequiredService<IYahooFinanceService>(),
-                DataProviderType.Mock => _serviceProvider.GetRequiredService<MockYahooFinanceService>(),
-                DataProviderType.AlphaVantage => throw new NotImplementedException(
-                    "Alpha Vantage provider is not yet implemented. This will be added in a future task."),
+                DataProviderType.YahooFinance => serviceProvider.GetRequiredService<IYahooFinanceService>(),
+                DataProviderType.Mock => serviceProvider.GetRequiredService<MockYahooFinanceService>(),
+                DataProviderType.AlphaVantage => serviceProvider.GetRequiredService<AlphaVantageService>(),
                 _ => throw new ArgumentException($"Unsupported provider type: {providerType}", nameof(providerType))
             };
         }
@@ -71,12 +76,8 @@ namespace StockSensePro.Infrastructure.Services
             {
                 try
                 {
-                    // For now, we only have YahooFinance and Mock available
-                    // AlphaVantage will be added in future tasks
-                    if (providerType == DataProviderType.YahooFinance || providerType == DataProviderType.Mock)
-                    {
-                        availableProviders.Add(providerType);
-                    }
+                    // All providers are now available: YahooFinance, Mock, and AlphaVantage
+                    availableProviders.Add(providerType);
                 }
                 catch (Exception ex)
                 {

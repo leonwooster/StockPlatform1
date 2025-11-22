@@ -187,8 +187,9 @@ builder.Services.AddSingleton<IProviderCostTracker, ProviderCostTracker>();
 // Register provider metrics tracker as singleton (shared across all requests)
 builder.Services.AddSingleton<IProviderMetricsTracker, ProviderMetricsTracker>();
 
-// Register provider factory for multi-provider support
-builder.Services.AddScoped<IStockDataProviderFactory, StockDataProviderFactory>();
+// Register provider factory for multi-provider support as singleton
+// Factory creates scoped providers on demand, so it can be singleton
+builder.Services.AddSingleton<IStockDataProviderFactory, StockDataProviderFactory>();
 
 // Register provider strategy implementations
 builder.Services.AddScoped<PrimaryProviderStrategy>();
