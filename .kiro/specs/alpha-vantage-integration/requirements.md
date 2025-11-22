@@ -64,8 +64,25 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 3. THE System SHALL map Alpha Vantage fundamental data to FundamentalData entity
 4. THE System SHALL map Alpha Vantage company overview to CompanyProfile entity
 5. THE System SHALL map Alpha Vantage search results to StockSearchResult entity
+6. WHEN Alpha Vantage does not provide a field, THE System SHALL set the field to null OR calculate from available data OR supplement from fallback provider based on configuration
+7. THE System SHALL log when data enrichment or calculation is used
+8. THE System SHALL track API usage for enrichment operations separately
 
-### Requirement 5: Configuration Management
+### Requirement 5: Data Enrichment and Calculated Fields
+
+**User Story:** As a user, I want complete market data even when using Alpha Vantage, so that I have all the information I need for trading decisions.
+
+#### Acceptance Criteria
+
+1. WHEN Alpha Vantage is the primary provider, THE System SHALL optionally supplement data with Yahoo Finance for bid and ask prices
+2. WHEN 52-week high or low is requested, THE System SHALL calculate from historical data if not directly available from Alpha Vantage
+3. WHEN average volume is requested, THE System SHALL calculate from recent historical data if not directly available from Alpha Vantage
+4. THE System SHALL cache calculated fields separately with 24-hour TTL to minimize API usage
+5. THE System SHALL allow configuration of data enrichment behavior per field type
+6. THE System SHALL gracefully handle missing data by setting fields to null when enrichment is disabled
+7. THE System SHALL log data enrichment operations for monitoring and debugging
+
+### Requirement 6: Configuration Management
 
 **User Story:** As a system administrator, I want to configure Alpha Vantage settings, so that I can control API usage and behavior.
 
@@ -76,8 +93,9 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 3. THE System SHALL read Alpha Vantage timeout settings from configuration
 4. THE System SHALL read Alpha Vantage rate limit settings from configuration
 5. THE System SHALL validate configuration on startup and log warnings for missing settings
+6. THE System SHALL read data enrichment settings from configuration
 
-### Requirement 6: Error Handling and Resilience
+### Requirement 7: Error Handling and Resilience
 
 **User Story:** As a user, I want the system to handle Alpha Vantage API errors gracefully, so that I receive meaningful error messages.
 
@@ -89,7 +107,7 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 4. WHEN Alpha Vantage is unavailable, THE System SHALL attempt fallback to secondary provider if configured
 5. THE System SHALL implement retry logic with exponential backoff for transient errors
 
-### Requirement 7: Caching Strategy
+### Requirement 8: Caching Strategy
 
 **User Story:** As a system administrator, I want Alpha Vantage responses cached, so that API usage is minimized and costs are reduced.
 
@@ -100,8 +118,9 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 3. THE System SHALL cache Alpha Vantage fundamental data for 6 hours
 4. THE System SHALL cache Alpha Vantage company profiles for 7 days
 5. THE System SHALL cache Alpha Vantage search results for 1 hour
+6. THE System SHALL cache calculated fields (52-week range, average volume) for 24 hours
 
-### Requirement 8: Provider Selection Strategy
+### Requirement 9: Provider Selection Strategy
 
 **User Story:** As a system administrator, I want to configure provider selection strategy, so that I can optimize for reliability and cost.
 
@@ -113,7 +132,7 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 4. THE System SHALL support "CostOptimized" strategy preferring cheaper providers when available
 5. WHEN a provider fails, THE System SHALL automatically switch to next available provider
 
-### Requirement 9: Health Monitoring
+### Requirement 10: Health Monitoring
 
 **User Story:** As a system administrator, I want to monitor Alpha Vantage API health, so that I can detect issues proactively.
 
@@ -125,7 +144,7 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 4. THE System SHALL track Alpha Vantage rate limit usage
 5. THE System SHALL expose metrics endpoint showing Alpha Vantage statistics
 
-### Requirement 10: Backward Compatibility
+### Requirement 11: Backward Compatibility
 
 **User Story:** As a developer, I want existing code to work without changes, so that the integration is seamless.
 
@@ -137,7 +156,7 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 4. THE System SHALL maintain existing cache keys and TTL behavior
 5. WHEN no provider is configured, THE System SHALL default to Yahoo Finance for backward compatibility
 
-### Requirement 11: API Key Security
+### Requirement 12: API Key Security
 
 **User Story:** As a security administrator, I want API keys stored securely, so that credentials are not exposed.
 
@@ -149,7 +168,7 @@ This document outlines the requirements for integrating Alpha Vantage as an alte
 4. THE System SHALL NOT include API keys in client-side responses
 5. THE System SHALL validate API key format on startup
 
-### Requirement 12: Cost Tracking
+### Requirement 13: Cost Tracking
 
 **User Story:** As a system administrator, I want to track API usage costs, so that I can manage budget.
 

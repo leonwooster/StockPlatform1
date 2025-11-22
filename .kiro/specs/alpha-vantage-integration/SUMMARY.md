@@ -72,6 +72,9 @@ IDataProviderStrategy
 | **Data Quality** | ⭐⭐⭐⭐⭐ Excellent | ⭐⭐⭐⭐ Good |
 | **Support** | ⭐⭐⭐⭐⭐ Excellent | ⭐ None |
 | **Uptime** | ⭐⭐⭐⭐⭐ 99.9%+ | ⭐⭐⭐ Variable |
+| **Data Coverage** | ⭐⭐⭐⭐ Good (see limitations) | ⭐⭐⭐⭐⭐ Excellent |
+
+**Note:** Alpha Vantage free tier does not include bid/ask prices. 52-week high/low and average volume require calculation from historical data. See **DATA_LIMITATIONS.md** for details and workarounds.
 
 ## Implementation Phases
 
@@ -340,6 +343,7 @@ curl http://localhost:5566/api/health/metrics
 - **requirements.md**: Detailed requirements with acceptance criteria
 - **design.md**: Architecture, components, and data flow
 - **tasks.md**: Step-by-step implementation plan
+- **DATA_LIMITATIONS.md**: Data availability comparison and workarounds
 - **SUMMARY.md**: This file - high-level overview
 
 ## Support

@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\src\StockSensePro.Application\StockSensePro.Application.csproj" />
     <ProjectReference Include="..\..\src\StockSensePro.Infrastructure\StockSensePro.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\StockSensePro.AI\StockSensePro.AI.csproj" />
+    <ProjectReference Include="..\..\src\StockSensePro.Api\StockSensePro.API.csproj" />
   </ItemGroup>
 
 </Project>

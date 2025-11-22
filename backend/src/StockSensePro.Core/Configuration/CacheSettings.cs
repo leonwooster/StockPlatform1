@@ -46,4 +46,50 @@ public class CacheSettings
     /// Maximum number of items to keep in cache
     /// </summary>
     public int MaxCacheSize { get; set; } = 10000;
+
+    /// <summary>
+    /// Provider-specific cache settings
+    /// </summary>
+    public ProviderCacheSettings AlphaVantage { get; set; } = new();
+
+    /// <summary>
+    /// Provider-specific cache settings
+    /// </summary>
+    public ProviderCacheSettings YahooFinance { get; set; } = new();
+}
+
+/// <summary>
+/// Provider-specific cache TTL configuration
+/// </summary>
+public class ProviderCacheSettings
+{
+    /// <summary>
+    /// TTL in seconds for quote/market data (default: 15 minutes)
+    /// </summary>
+    public int QuoteTTL { get; set; } = 900;
+
+    /// <summary>
+    /// TTL in seconds for historical price data (default: 24 hours)
+    /// </summary>
+    public int HistoricalTTL { get; set; } = 86400;
+
+    /// <summary>
+    /// TTL in seconds for fundamental data (default: 6 hours)
+    /// </summary>
+    public int FundamentalsTTL { get; set; } = 21600;
+
+    /// <summary>
+    /// TTL in seconds for company profile data (default: 7 days)
+    /// </summary>
+    public int ProfileTTL { get; set; } = 604800;
+
+    /// <summary>
+    /// TTL in seconds for search results (default: 1 hour)
+    /// </summary>
+    public int SearchTTL { get; set; } = 3600;
+
+    /// <summary>
+    /// TTL in seconds for calculated fields (default: 24 hours)
+    /// </summary>
+    public int CalculatedFieldsTTL { get; set; } = 86400;
 }

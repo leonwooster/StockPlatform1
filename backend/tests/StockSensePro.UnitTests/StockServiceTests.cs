@@ -3,6 +3,8 @@ using Moq;
 using StockSensePro.Core.Entities;
 using StockSensePro.Core.Interfaces;
 using StockSensePro.Core.Configuration;
+using StockSensePro.Core.Enums;
+using StockSensePro.Core.ValueObjects;
 using StockSensePro.Application.Services;
 using Xunit;
 
@@ -12,6 +14,9 @@ namespace StockSensePro.UnitTests
     {
         private readonly Mock<IStockRepository> _mockRepository;
         private readonly Mock<IStockDataProvider> _mockDataProvider;
+        private readonly Mock<IDataProviderStrategy> _mockProviderStrategy;
+        private readonly Mock<IProviderHealthMonitor> _mockHealthMonitor;
+        private readonly Mock<IAlphaVantageRateLimiter> _mockRateLimiter;
         private readonly Mock<ICacheService> _mockCacheService;
         private readonly Mock<ILogger<StockService>> _mockLogger;
         private readonly CacheSettings _cacheSettings;
@@ -21,6 +26,9 @@ namespace StockSensePro.UnitTests
         {
             _mockRepository = new Mock<IStockRepository>();
             _mockDataProvider = new Mock<IStockDataProvider>();
+            _mockProviderStrategy = new Mock<IDataProviderStrategy>();
+            _mockHealthMonitor = new Mock<IProviderHealthMonitor>();
+            _mockRateLimiter = new Mock<IAlphaVantageRateLimiter>();
             _mockCacheService = new Mock<ICacheService>();
             _mockLogger = new Mock<ILogger<StockService>>();
             _cacheSettings = new CacheSettings
@@ -31,9 +39,39 @@ namespace StockSensePro.UnitTests
                 ProfileTTL = 604800,
                 SearchTTL = 3600
             };
+
+            // Setup default behavior for strategy to return the mock data provider
+            _mockProviderStrategy.Setup(s => s.SelectProvider(It.IsAny<DataProviderContext>()))
+                .Returns(_mockDataProvider.Object);
+            _mockProviderStrategy.Setup(s => s.GetFallbackProvider())
+                .Returns((IStockDataProvider?)null);
+            _mockProviderStrategy.Setup(s => s.GetStrategyName())
+                .Returns("MockStrategy");
+
+            // Setup default behavior for health monitor
+            _mockHealthMonitor.Setup(h => h.GetAllHealthStatuses())
+                .Returns(new Dictionary<DataProviderType, ProviderHealth>
+                {
+                    { DataProviderType.YahooFinance, new ProviderHealth { IsHealthy = true } },
+                    { DataProviderType.AlphaVantage, new ProviderHealth { IsHealthy = true } },
+                    { DataProviderType.Mock, new ProviderHealth { IsHealthy = true } }
+                });
+
+            // Setup default behavior for rate limiter
+            _mockRateLimiter.Setup(r => r.GetStatus())
+                .Returns(new RateLimitStatus
+                {
+                    MinuteRequestsRemaining = 5,
+                    MinuteRequestsLimit = 5,
+                    DayRequestsRemaining = 25,
+                    DayRequestsLimit = 25
+                });
+
             _stockService = new StockService(
                 _mockRepository.Object,
-                _mockDataProvider.Object,
+                _mockProviderStrategy.Object,
+                _mockHealthMonitor.Object,
+                _mockRateLimiter.Object,
                 _mockCacheService.Object,
                 _cacheSettings,
                 _mockLogger.Object);

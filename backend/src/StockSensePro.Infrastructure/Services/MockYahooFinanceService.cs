@@ -49,19 +49,19 @@ public class MockYahooFinanceService : IYahooFinanceService
         return new MarketData
         {
             Symbol = symbol,
-            ShortName = GetCompanyName(symbol),
-            LongName = GetCompanyName(symbol),
             CurrentPrice = Math.Round(currentPrice, 2),
-            PreviousClose = Math.Round(basePrice, 2),
-            Open = Math.Round(basePrice + (decimal)(_random.NextDouble() * 2 - 1), 2),
             DayHigh = Math.Round(currentPrice + (decimal)(_random.NextDouble() * 3), 2),
             DayLow = Math.Round(currentPrice - (decimal)(_random.NextDouble() * 3), 2),
             Change = Math.Round(change, 2),
             ChangePercent = Math.Round(changePercent, 2),
             Volume = _random.Next(10000000, 100000000),
-            MarketCap = (long)(currentPrice * _random.Next(1000000000, 3000000000)),
+            MarketCap = (long)((double)currentPrice * _random.Next(1000000000, 2000000000)),
+            FiftyTwoWeekHigh = Math.Round(basePrice * 1.2m, 2),
+            FiftyTwoWeekLow = Math.Round(basePrice * 0.8m, 2),
+            AverageVolume = _random.Next(50000000, 150000000),
             Timestamp = DateTime.UtcNow,
-            MarketState = MarketState.Regular
+            Exchange = "NASDAQ",
+            MarketState = MarketState.Open
         };
     }
 
@@ -138,21 +138,22 @@ public class MockYahooFinanceService : IYahooFinanceService
         return new FundamentalData
         {
             Symbol = symbol,
-            MarketCap = (long)(basePrice * _random.Next(1000000000, 3000000000)),
-            PeRatio = (decimal)(_random.NextDouble() * 30 + 10),
-            Eps = Math.Round(basePrice / (decimal)(_random.NextDouble() * 30 + 10), 2),
+            PERatio = (decimal)(_random.NextDouble() * 30 + 10),
+            EPS = Math.Round(basePrice / (decimal)(_random.NextDouble() * 30 + 10), 2),
             DividendYield = (decimal)(_random.NextDouble() * 0.03),
-            Beta = (decimal)(_random.NextDouble() * 0.5 + 0.8),
-            FiftyTwoWeekHigh = Math.Round(basePrice * 1.2m, 2),
-            FiftyTwoWeekLow = Math.Round(basePrice * 0.8m, 2),
-            FiftyDayAverage = Math.Round(basePrice * 0.98m, 2),
-            TwoHundredDayAverage = Math.Round(basePrice * 0.95m, 2),
             ProfitMargin = (decimal)(_random.NextDouble() * 0.25),
             OperatingMargin = (decimal)(_random.NextDouble() * 0.30),
             ReturnOnEquity = (decimal)(_random.NextDouble() * 0.20),
-            RevenuePerShare = Math.Round(basePrice * (decimal)(_random.NextDouble() * 2), 2),
-            QuarterlyRevenueGrowth = (decimal)(_random.NextDouble() * 0.15),
-            QuarterlyEarningsGrowth = (decimal)(_random.NextDouble() * 0.20)
+            RevenueGrowth = (decimal)(_random.NextDouble() * 0.15),
+            EarningsGrowth = (decimal)(_random.NextDouble() * 0.20),
+            PEGRatio = (decimal)(_random.NextDouble() * 2 + 0.5),
+            PriceToBook = (decimal)(_random.NextDouble() * 5 + 1),
+            PriceToSales = (decimal)(_random.NextDouble() * 3 + 0.5),
+            ReturnOnAssets = (decimal)(_random.NextDouble() * 0.15),
+            CurrentRatio = (decimal)(_random.NextDouble() * 2 + 1),
+            DebtToEquity = (decimal)(_random.NextDouble() * 1.5),
+            PayoutRatio = (decimal)(_random.NextDouble() * 0.5),
+            LastUpdated = DateTime.UtcNow
         };
     }
 
@@ -165,16 +166,17 @@ public class MockYahooFinanceService : IYahooFinanceService
         return new CompanyProfile
         {
             Symbol = symbol,
-            Name = GetCompanyName(symbol),
+            CompanyName = GetCompanyName(symbol),
             Sector = GetSector(symbol),
             Industry = GetIndustry(symbol),
             Description = $"{GetCompanyName(symbol)} is a leading company in the {GetSector(symbol)} sector, specializing in {GetIndustry(symbol)}. The company has a strong market presence and continues to innovate in its field.",
             Website = $"https://www.{symbol.ToLower().Replace("^", "")}.com",
-            FullTimeEmployees = _random.Next(10000, 200000),
+            EmployeeCount = _random.Next(10000, 200000),
             City = "Cupertino",
-            State = "CA",
             Country = "United States",
-            Phone = "+1-555-0100"
+            Exchange = "NASDAQ",
+            Currency = "USD",
+            CEO = "John Doe"
         };
     }
 
@@ -206,6 +208,64 @@ public class MockYahooFinanceService : IYahooFinanceService
         await Task.Delay(10, cancellationToken);
         _logger.LogInformation("Mock: Health check - always healthy");
         return true; // Mock service is always healthy
+    }
+
+    // Additional IYahooFinanceService methods
+    public async Task<Stock?> GetStockAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(100, cancellationToken);
+
+        _logger.LogInformation("Mock: Fetching stock for {Symbol}", symbol);
+
+        var basePrice = _basePrices.GetValueOrDefault(symbol, 100.00m);
+        var priceVariation = (decimal)(_random.NextDouble() * 10 - 5);
+        var currentPrice = basePrice + priceVariation;
+
+        return new Stock
+        {
+            Symbol = symbol,
+            Name = GetCompanyName(symbol),
+            Sector = GetSector(symbol),
+            Industry = GetIndustry(symbol),
+            CurrentPrice = Math.Round(currentPrice, 2),
+            PreviousClose = Math.Round(basePrice, 2),
+            Open = Math.Round(basePrice + (decimal)(_random.NextDouble() * 2 - 1), 2),
+            High = Math.Round(currentPrice + (decimal)(_random.NextDouble() * 3), 2),
+            Low = Math.Round(currentPrice - (decimal)(_random.NextDouble() * 3), 2),
+            Volume = _random.Next(10000000, 100000000),
+            Exchange = "NASDAQ",
+            LastUpdated = DateTime.UtcNow
+        };
+    }
+
+    public async Task<List<StockPrice>> GetHistoricalPricesAsync(string symbol, int days = 30, CancellationToken cancellationToken = default)
+    {
+        var endDate = DateTime.UtcNow.Date;
+        var startDate = endDate.AddDays(-days);
+        return await GetHistoricalPricesAsync(symbol, startDate, endDate, TimeInterval.Daily, cancellationToken);
+    }
+
+    public async Task<CompanyInfo?> GetCompanyInfoAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(100, cancellationToken);
+
+        _logger.LogInformation("Mock: Fetching company info for {Symbol}", symbol);
+
+        return new CompanyInfo
+        {
+            Symbol = symbol,
+            CompanyName = GetCompanyName(symbol),
+            Sector = GetSector(symbol),
+            Industry = GetIndustry(symbol),
+            BusinessSummary = $"{GetCompanyName(symbol)} is a leading company in the {GetSector(symbol)} sector, specializing in {GetIndustry(symbol)}. The company has a strong market presence and continues to innovate in its field.",
+            Website = $"https://www.{symbol.ToLower().Replace("^", "")}.com",
+            City = "Cupertino",
+            State = "CA",
+            Country = "United States",
+            Phone = "+1-555-0100",
+            Address = "1 Infinite Loop",
+            Zip = "95014"
+        };
     }
 
     private string GetCompanyName(string symbol)

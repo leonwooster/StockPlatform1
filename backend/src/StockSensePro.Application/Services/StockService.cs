@@ -3,29 +3,176 @@ using StockSensePro.Core.Entities;
 using StockSensePro.Core.Enums;
 using StockSensePro.Core.Interfaces;
 using StockSensePro.Core.Configuration;
+using StockSensePro.Core.ValueObjects;
+using System.Diagnostics;
 
 namespace StockSensePro.Application.Services
 {
     public class StockService : IStockService
     {
         private readonly IStockRepository _stockRepository;
-        private readonly IStockDataProvider _stockDataProvider;
+        private readonly IDataProviderStrategy _providerStrategy;
+        private readonly IProviderHealthMonitor _healthMonitor;
+        private readonly IAlphaVantageRateLimiter _rateLimiter;
         private readonly ICacheService _cacheService;
         private readonly CacheSettings _cacheSettings;
         private readonly ILogger<StockService> _logger;
 
         public StockService(
             IStockRepository stockRepository,
-            IStockDataProvider stockDataProvider,
+            IDataProviderStrategy providerStrategy,
+            IProviderHealthMonitor healthMonitor,
+            IAlphaVantageRateLimiter rateLimiter,
             ICacheService cacheService,
             CacheSettings cacheSettings,
             ILogger<StockService> logger)
         {
             _stockRepository = stockRepository;
-            _stockDataProvider = stockDataProvider;
+            _providerStrategy = providerStrategy;
+            _healthMonitor = healthMonitor;
+            _rateLimiter = rateLimiter;
             _cacheService = cacheService;
             _cacheSettings = cacheSettings;
             _logger = logger;
+        }
+
+        /// <summary>
+        /// Creates a DataProviderContext for provider selection
+        /// </summary>
+        private DataProviderContext CreateProviderContext(string symbol, string operation)
+        {
+            var providerHealth = _healthMonitor.GetAllHealthStatuses();
+            
+            // Get rate limit status for Alpha Vantage
+            var rateLimitStatus = _rateLimiter.GetStatus();
+            var rateLimitRemaining = new Dictionary<DataProviderType, int>
+            {
+                { DataProviderType.AlphaVantage, rateLimitStatus.MinuteRequestsRemaining },
+                { DataProviderType.YahooFinance, int.MaxValue }, // Yahoo Finance has no rate limit
+                { DataProviderType.Mock, int.MaxValue } // Mock has no rate limit
+            };
+
+            return new DataProviderContext(symbol, operation, providerHealth, rateLimitRemaining);
+        }
+
+        /// <summary>
+        /// Selects and executes an operation using the appropriate provider with fallback support
+        /// </summary>
+        private async Task<T> ExecuteWithProviderAsync<T>(
+            string symbol,
+            string operation,
+            Func<IStockDataProvider, Task<T>> providerOperation,
+            CancellationToken cancellationToken = default)
+        {
+            var context = CreateProviderContext(symbol, operation);
+            var provider = _providerStrategy.SelectProvider(context);
+            var stopwatch = Stopwatch.StartNew();
+
+            try
+            {
+                _logger.LogInformation(
+                    "Executing operation with provider: Operation={Operation}, Symbol={Symbol}, Provider={Provider}, Strategy={Strategy}",
+                    operation,
+                    symbol,
+                    provider.GetType().Name,
+                    _providerStrategy.GetStrategyName());
+
+                var result = await providerOperation(provider);
+                stopwatch.Stop();
+
+                // Record success for health monitoring
+                var providerType = GetProviderType(provider);
+                _healthMonitor.RecordSuccess(providerType, stopwatch.Elapsed);
+
+                _logger.LogInformation(
+                    "Operation completed successfully: Operation={Operation}, Symbol={Symbol}, Provider={Provider}, Duration={DurationMs}ms",
+                    operation,
+                    symbol,
+                    provider.GetType().Name,
+                    stopwatch.ElapsedMilliseconds);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+
+                // Record failure for health monitoring
+                var providerType = GetProviderType(provider);
+                _healthMonitor.RecordFailure(providerType);
+
+                _logger.LogError(ex,
+                    "Operation failed with provider: Operation={Operation}, Symbol={Symbol}, Provider={Provider}, Duration={DurationMs}ms, ErrorType={ErrorType}",
+                    operation,
+                    symbol,
+                    provider.GetType().Name,
+                    stopwatch.ElapsedMilliseconds,
+                    ex.GetType().Name);
+
+                // Try fallback provider if available
+                var fallbackProvider = _providerStrategy.GetFallbackProvider();
+                if (fallbackProvider != null && fallbackProvider != provider)
+                {
+                    _logger.LogWarning(
+                        "Attempting fallback provider: Operation={Operation}, Symbol={Symbol}, FallbackProvider={FallbackProvider}",
+                        operation,
+                        symbol,
+                        fallbackProvider.GetType().Name);
+
+                    try
+                    {
+                        var fallbackStopwatch = Stopwatch.StartNew();
+                        var result = await providerOperation(fallbackProvider);
+                        fallbackStopwatch.Stop();
+
+                        // Record success for fallback provider
+                        var fallbackProviderType = GetProviderType(fallbackProvider);
+                        _healthMonitor.RecordSuccess(fallbackProviderType, fallbackStopwatch.Elapsed);
+
+                        _logger.LogInformation(
+                            "Fallback operation completed successfully: Operation={Operation}, Symbol={Symbol}, FallbackProvider={FallbackProvider}, Duration={DurationMs}ms",
+                            operation,
+                            symbol,
+                            fallbackProvider.GetType().Name,
+                            fallbackStopwatch.ElapsedMilliseconds);
+
+                        return result;
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        // Record failure for fallback provider
+                        var fallbackProviderType = GetProviderType(fallbackProvider);
+                        _healthMonitor.RecordFailure(fallbackProviderType);
+
+                        _logger.LogError(fallbackEx,
+                            "Fallback operation also failed: Operation={Operation}, Symbol={Symbol}, FallbackProvider={FallbackProvider}, ErrorType={ErrorType}",
+                            operation,
+                            symbol,
+                            fallbackProvider.GetType().Name,
+                            fallbackEx.GetType().Name);
+                    }
+                }
+
+                // No fallback available or fallback also failed, rethrow original exception
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets the provider type from a provider instance
+        /// </summary>
+        private DataProviderType GetProviderType(IStockDataProvider provider)
+        {
+            var providerTypeName = provider.GetType().Name;
+            
+            if (providerTypeName.Contains("AlphaVantage"))
+                return DataProviderType.AlphaVantage;
+            
+            if (providerTypeName.Contains("Mock"))
+                return DataProviderType.Mock;
+            
+            // Default to YahooFinance for backward compatibility
+            return DataProviderType.YahooFinance;
         }
 
         // Existing repository methods
@@ -88,8 +235,12 @@ namespace StockSensePro.Application.Services
                     symbol,
                     cacheKey);
 
-                // Fetch from API
-                var marketData = await _stockDataProvider.GetQuoteAsync(symbol, cancellationToken);
+                // Fetch from API using provider strategy
+                var marketData = await ExecuteWithProviderAsync(
+                    symbol,
+                    "GetQuote",
+                    provider => provider.GetQuoteAsync(symbol, cancellationToken),
+                    cancellationToken);
 
                 // Store in cache with normal TTL
                 await _cacheService.SetAsync(cacheKey, marketData, TimeSpan.FromSeconds(_cacheSettings.QuoteTTL));
@@ -174,9 +325,12 @@ namespace StockSensePro.Application.Services
                     interval,
                     cacheKey);
 
-                // Fetch from API
-                var historicalPrices = await _stockDataProvider.GetHistoricalPricesAsync(
-                    symbol, startDate, endDate, interval, cancellationToken);
+                // Fetch from API using provider strategy
+                var historicalPrices = await ExecuteWithProviderAsync(
+                    symbol,
+                    "GetHistoricalPrices",
+                    provider => provider.GetHistoricalPricesAsync(symbol, startDate, endDate, interval, cancellationToken),
+                    cancellationToken);
 
                 // Store in cache with normal TTL
                 await _cacheService.SetAsync(cacheKey, historicalPrices, TimeSpan.FromSeconds(_cacheSettings.HistoricalTTL));
@@ -249,8 +403,12 @@ namespace StockSensePro.Application.Services
                     symbol,
                     cacheKey);
 
-                // Fetch from API
-                var fundamentalData = await _stockDataProvider.GetFundamentalsAsync(symbol, cancellationToken);
+                // Fetch from API using provider strategy
+                var fundamentalData = await ExecuteWithProviderAsync(
+                    symbol,
+                    "GetFundamentals",
+                    provider => provider.GetFundamentalsAsync(symbol, cancellationToken),
+                    cancellationToken);
 
                 // Store in cache with normal TTL
                 await _cacheService.SetAsync(cacheKey, fundamentalData, TimeSpan.FromSeconds(_cacheSettings.FundamentalsTTL));
@@ -322,8 +480,12 @@ namespace StockSensePro.Application.Services
                     symbol,
                     cacheKey);
 
-                // Fetch from API
-                var companyProfile = await _stockDataProvider.GetCompanyProfileAsync(symbol, cancellationToken);
+                // Fetch from API using provider strategy
+                var companyProfile = await ExecuteWithProviderAsync(
+                    symbol,
+                    "GetCompanyProfile",
+                    provider => provider.GetCompanyProfileAsync(symbol, cancellationToken),
+                    cancellationToken);
 
                 // Store in cache with normal TTL
                 await _cacheService.SetAsync(cacheKey, companyProfile, TimeSpan.FromSeconds(_cacheSettings.ProfileTTL));
@@ -398,8 +560,12 @@ namespace StockSensePro.Application.Services
                     query,
                     cacheKey);
 
-                // Fetch from API
-                var searchResults = await _stockDataProvider.SearchSymbolsAsync(query, limit, cancellationToken);
+                // Fetch from API using provider strategy
+                var searchResults = await ExecuteWithProviderAsync(
+                    query,
+                    "SearchSymbols",
+                    provider => provider.SearchSymbolsAsync(query, limit, cancellationToken),
+                    cancellationToken);
 
                 // Store in cache with normal TTL
                 await _cacheService.SetAsync(cacheKey, searchResults, TimeSpan.FromSeconds(_cacheSettings.SearchTTL));
